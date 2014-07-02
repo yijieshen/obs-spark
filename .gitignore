@@ -56,3 +56,5 @@ metastore_db/
 metastore/
 warehouse/
 TempStatsStore/
+sql/core/src/test/scala/org/apache/spark/sql/SYJTest.scala
+sql/core/src/test/scala/org/apache/spark/sql/SYJWorkSheet.scala
