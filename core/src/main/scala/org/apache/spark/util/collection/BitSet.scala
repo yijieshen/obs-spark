@@ -47,6 +47,19 @@ class BitSet(numBits: Int) extends Serializable {
   }
 
   /**
+   * Get a copy of the BitSet
+   */
+  def copy: BitSet = {
+    val newBS = new BitSet(capacity)
+    var ind = 0
+    while( ind < numWords ) {
+      newBS.words(ind) = words(ind)
+      ind += 1
+    }
+    newBS
+  }
+
+  /**
    * Compute the bit-wise AND of the two sets returning the
    * result.
    */

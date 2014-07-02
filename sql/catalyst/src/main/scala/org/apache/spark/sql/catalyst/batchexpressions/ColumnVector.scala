@@ -8,7 +8,7 @@ abstract class ColumnVector (val typeWidth: Int, val rowNum: Int, val isTemp: Bo
 
   def dt: DataType
 
-  //nullable
+  //TODO: do we need nullable?
   var nullable: Boolean = false
   //(null -> 0) (notNull -> 1)
   var notNullArray: BitSet = _
@@ -18,11 +18,12 @@ abstract class ColumnVector (val typeWidth: Int, val rowNum: Int, val isTemp: Bo
     notNullArray = notNullbm
   }
 
-  //selector
-  var withSelector: Boolean = false
-  var selector: BitSet = _
+  //TODO: Currently, we don't use these two fields for per columnVector selector,
+  //maybe an optimization later, use private[this] to hide
+  private[this] var withSelector: Boolean = false
+  private[this] var selector: BitSet = _
 
-  def setSelector(sbm: BitSet) = {
+  private[this] def setSelector(sbm: BitSet) = {
     withSelector = true
     selector = sbm
   }
