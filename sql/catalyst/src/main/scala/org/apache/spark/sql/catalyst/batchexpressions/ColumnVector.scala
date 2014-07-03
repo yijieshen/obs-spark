@@ -1,7 +1,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
 import com.google.common.base.{Objects => GObjs}
-import org.apache.spark.util.collection.BitSet
 import org.apache.spark.sql.catalyst.types._
 
 abstract class ColumnVector (val typeWidth: Int, val rowNum: Int, val isTemp: Boolean = false) {

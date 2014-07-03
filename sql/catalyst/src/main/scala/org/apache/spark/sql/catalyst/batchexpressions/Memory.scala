@@ -4,7 +4,6 @@ import java.lang.{AssertionError => JAsertError}
 import java.nio.ByteOrder
 
 import org.apache.spark.sql.catalyst.types._
-import org.apache.spark.util.collection.BitSet
 import sun.misc.Unsafe
 
 /**
@@ -141,12 +140,12 @@ class Memory(val peer: Long, val size: Long) {
  * On-heap version String Array to avoid copy
  * @param strings
  */
-class StringMemory(strings: Array[String]) extends Memory(0, 0) {
+class StringMemory(val strings: Array[String]) extends Memory(0, 0) {
   //on-heap, do nothing
   override def free() {}
 }
 
-class BooleanMemory(bs: BitSet) extends Memory(0, 0) {
+class BooleanMemory(val bs: BitSet) extends Memory(0, 0) {
   //on-heap, do nothing
   override def free() {}
 }

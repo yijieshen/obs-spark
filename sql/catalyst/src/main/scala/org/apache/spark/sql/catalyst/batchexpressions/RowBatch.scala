@@ -1,7 +1,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
 import org.apache.spark.sql.catalyst.types._
-import org.apache.spark.util.collection.BitSet
 
 import scala.collection.mutable.Map
 

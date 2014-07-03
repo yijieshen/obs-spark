@@ -1,15 +1,18 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
 import org.apache.spark.sql.catalyst.errors.TreeNodeException
-import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.catalyst.expressions.{Expression, Row}
+import org.apache.spark.sql.catalyst.trees
 import org.apache.spark.sql.catalyst.types._
-import org.apache.spark.util.collection.BitSet
 
 abstract class BatchExpression extends Expression {
   self: Product =>
 
   /** The narrowest possible type that is produced when this expression is evaluated. */
   type EvaluatedType <: ColumnVector
+
+  override final def eval(input: Row = null) =
+    throw new UnsupportedOperationException("Batch Expressions don't use this")
 
   def eval(input: RowBatch = null): EvaluatedType
 
@@ -18,7 +21,7 @@ abstract class BatchExpression extends Expression {
    * and do any casting necessary of child evaluation.
    */
   @inline
-  def n1(e: BatchExpression, rb: RowBatch, f: ((Numeric[Any], Any) => Any)): ColumnVector = {
+  def n1b(e: BatchExpression, rb: RowBatch, f: ((Numeric[Any], Any) => Any)): ColumnVector = {
     val resultType = e.dataType
     val evalE = e.eval(rb)
     val width = evalE.typeWidth
@@ -78,7 +81,7 @@ abstract class BatchExpression extends Expression {
    * Either one of the expressions result is null, the evaluation result should be null.
    */
   @inline
-  protected final def n2(
+  protected final def n2b(
       rb: RowBatch,
       e1: BatchExpression,
       e2: BatchExpression,
@@ -154,7 +157,7 @@ abstract class BatchExpression extends Expression {
    * Either one of the expressions result is null, the evaluation result should be null.
    */
   @inline
-  protected final def f2(
+  protected final def f2b(
        rb: RowBatch,
        e1: BatchExpression,
        e2: BatchExpression,
@@ -230,7 +233,7 @@ abstract class BatchExpression extends Expression {
    * Either one of the expressions result is null, the evaluation result should be null.
    */
   @inline
-  protected final def i2(
+  protected final def i2b(
       rb: RowBatch,
       e1: BatchExpression,
       e2: BatchExpression,
@@ -310,12 +313,13 @@ abstract class BatchExpression extends Expression {
    * Either one of the expressions result is null, the evaluation result should be null.
    */
   @inline
-  protected final def c2(
+  protected final def c2b(
       rb: RowBatch,
       e1: BatchExpression,
       e2: BatchExpression,
       f: ((Ordering[Any], Any, Any) => Boolean)): ColumnVector  = {
 
+    //TODO: Boolean/String/TimeStamp as inputType not supported now
     if (e1.dataType != e2.dataType) {
       throw new TreeNodeException(this, s"Types do not match ${e1.dataType} != ${e2.dataType}")
     }
@@ -329,12 +333,13 @@ abstract class BatchExpression extends Expression {
     inputType match {
       case nt: NativeType =>
         //function prepare
-        val memSetter = Memory.setValue(resultType).asInstanceOf[(Long, it.JvmType) => Unit]
         val memGetter = Memory.getValue(inputType).asInstanceOf[(Long) => nt.JvmType]
-        val castedF = f.asInstanceOf[(Ordering[it.JvmType], it.JvmType, it.JvmType) => Boolean]
+        val castedF = f.asInstanceOf[(Ordering[nt.JvmType], nt.JvmType, nt.JvmType) => Boolean]
 
         //prepare input & output memory
-        val (memIn1, memIn2, memOut, memToFree) = memoryPrepare(evalE1, evalE2, rb, width)
+        val memIn1 = evalE1.content
+        val memIn2 = evalE2.content
+        val blOut = new BitSet(rb.rowNum)
 
         //prepare bitmap for calculation
         val notNullArray1 = evalE1.notNullArray
@@ -349,29 +354,30 @@ abstract class BatchExpression extends Expression {
           var i = 0
           while (iter.hasNext) {
             i = iter.next()
-            val cr = castedF(it.integral,
+            val cr = castedF(nt.ordering,
               memGetter(memIn1.peer + i * width),
               memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            blOut.set(i, cr)
           }
         } else {
           val rowNum = rb.rowNum
           var i = 0
           while (i < rowNum) {
-            val cr = castedF(it.integral,
+            val cr = castedF(nt.ordering,
               memGetter(memIn1.peer + i * width),
               memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            blOut.set(i, cr)
             i += 1
           }
         }
 
         //free redundant memory
-        if(memToFree != null) memToFree.free()
+        if(evalE1.isTemp) memIn1.free()
+        if(evalE2.isTemp) memIn2.free()
 
         //prepare result
         val rcv = rb.getVector(resultType, true)
-        rcv.setContent(memOut)
+        rcv.setContent(new BooleanMemory(blOut))
         if (notNullArrayResult != null) {
           rcv.setNullable(notNullArrayResult)
         }
@@ -389,7 +395,7 @@ abstract class BatchExpression extends Expression {
    * @return
    */
   @inline
-  private def andWithNull(bs1: BitSet, bs2: BitSet, cp: Boolean): BitSet = {
+  protected final def andWithNull(bs1: BitSet, bs2: BitSet, cp: Boolean): BitSet = {
     if (bs1 != null && bs2 != null) {
       bs1 & bs2
     } else if (bs1 != null && bs2 == null) {
@@ -402,7 +408,7 @@ abstract class BatchExpression extends Expression {
   }
 
   @inline
-  private def memoryPrepare(
+  protected final def memoryPrepare(
       evalE1: ColumnVector, evalE2: ColumnVector, rb: RowBatch, typeWidth: Int) = {
     val memIn1 = evalE1.content
     val memIn2 = evalE2.content
@@ -416,4 +422,32 @@ abstract class BatchExpression extends Expression {
     val memToFree = if(evalE1.isTemp && evalE2.isTemp) memIn2 else null
     (memIn1, memIn2, memOut, memToFree)
   }
+}
+
+abstract class BinaryBatchExpression extends BatchExpression
+    with trees.BinaryNode[BatchExpression] {
+
+  self: Product =>
+
+  def symbol: String
+
+  override def foldable = left.foldable && right.foldable
+
+  override def references = left.references ++ right.references
+
+  override def toString = s"($left $symbol $right)"
+}
+
+abstract class LeafBatchExpression extends BatchExpression
+    with trees.LeafNode[BatchExpression] {
+
+  self: Product =>
+}
+
+abstract class UnaryBatchExpression extends BatchExpression
+    with trees.UnaryNode[BatchExpression] {
+
+  self: Product =>
+
+  override def references = child.references
 }

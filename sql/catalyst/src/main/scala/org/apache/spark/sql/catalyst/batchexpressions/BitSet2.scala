@@ -15,13 +15,13 @@
  * limitations under the License.
  */
 
-package org.apache.spark.util.collection
+package org.apache.spark.sql.catalyst.batchexpressions
 
 /**
  * A simple, fixed-size bit set implementation. This implementation is fast because it avoids
  * safety/bound checking.
  */
-class BitSet(numBits: Int) extends Serializable {
+class BitSet(val numBits: Int) extends Serializable {
 
   private val words = new Array[Long](bit2words(numBits))
   private val numWords = words.length
@@ -50,10 +50,23 @@ class BitSet(numBits: Int) extends Serializable {
    * Get a copy of the BitSet
    */
   def copy: BitSet = {
-    val newBS = new BitSet(capacity)
+    val newBS = new BitSet(numBits)
     var ind = 0
     while( ind < numWords ) {
       newBS.words(ind) = words(ind)
+      ind += 1
+    }
+    newBS
+  }
+
+  /**
+   * Get the complement of the BitSet
+   */
+  def complement: BitSet = {
+    val newBS = new BitSet(numBits)
+    var ind = 0
+    while( ind < numWords ) {
+      newBS.words(ind) = ~words(ind)
       ind += 1
     }
     newBS
@@ -64,7 +77,7 @@ class BitSet(numBits: Int) extends Serializable {
    * result.
    */
   def &(other: BitSet): BitSet = {
-    val newBS = new BitSet(math.max(capacity, other.capacity))
+    val newBS = new BitSet(math.max(numBits, other.numBits))
     val smaller = math.min(numWords, other.numWords)
     assert(newBS.numWords >= numWords)
     assert(newBS.numWords >= other.numWords)
@@ -81,7 +94,7 @@ class BitSet(numBits: Int) extends Serializable {
    * result.
    */
   def |(other: BitSet): BitSet = {
-    val newBS = new BitSet(math.max(capacity, other.capacity))
+    val newBS = new BitSet(math.max(numBits, other.numBits))
     assert(newBS.numWords >= numWords)
     assert(newBS.numWords >= other.numWords)
     val smaller = math.min(numWords, other.numWords)
@@ -106,7 +119,7 @@ class BitSet(numBits: Int) extends Serializable {
    * result.
    */
   def ^(other: BitSet): BitSet = {
-    val newBS = new BitSet(math.max(capacity, other.capacity))
+    val newBS = new BitSet(math.max(numBits, other.numBits))
     val smaller = math.min(numWords, other.numWords)
     var ind = 0
     while (ind < smaller) {
@@ -127,7 +140,7 @@ class BitSet(numBits: Int) extends Serializable {
    * result.
    */
   def andNot(other: BitSet): BitSet = {
-    val newBS = new BitSet(capacity)
+    val newBS = new BitSet(numBits)
     val smaller = math.min(numWords, other.numWords)
     var ind = 0
     while (ind < smaller) {
@@ -175,7 +188,7 @@ class BitSet(numBits: Int) extends Serializable {
    */
   def iterator = new Iterator[Int] {
     var ind = nextSetBit(0)
-    override def hasNext: Boolean = ind >= 0
+    override def hasNext: Boolean = (ind >= 0 && ind < numBits)
     override def next() = {
       val tmp = ind
       ind  = nextSetBit(ind + 1)
