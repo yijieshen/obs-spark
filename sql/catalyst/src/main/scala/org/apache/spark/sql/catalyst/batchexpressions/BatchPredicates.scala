@@ -17,7 +17,7 @@
 
 package org.apache.spark.sql.catalyst.batchexpressions
 
-import org.apache.spark.sql.catalyst.types.BooleanType
+import org.apache.spark.sql.catalyst.types._
 
 trait BatchPredicate extends BatchExpression {
   self: Product =>
@@ -38,7 +38,7 @@ case class BatchNot(child: BatchExpression) extends UnaryBatchExpression with Ba
   override def toString = s"NOT $child"
 
   override def eval(input: RowBatch): ColumnVector = {
-    val evalE = child.eval(input).asInstanceOf[BooleanColumnVector]
+    val evalE = child.eval(input)
 
     val selector = input.curSelector
     val notNullArray = evalE.notNullArray
@@ -55,66 +55,55 @@ case class BatchNot(child: BatchExpression) extends UnaryBatchExpression with Ba
   }
 }
 
-/**
- * Evaluates to `true` if `list` contains `value`.
-
-case class In(value: Expression, list: Seq[Expression]) extends Predicate {
-  def children = value +: list
-  def references = children.flatMap(_.references).toSet
-  def nullable = true // TODO: Figure out correct nullability semantics of IN.
-  override def toString = s"$value IN ${list.mkString("(", ",", ")")}"
-
-  override def eval(input: Row): Any = {
-    val evaluatedValue = value.eval(input)
-    list.exists(e => e.eval(input) == evaluatedValue)
-  }
-}
-
-*/
-
-//TODO:
 case class BatchAnd(left: BatchExpression, right: BatchExpression) extends BinaryBatchPredicate {
   def symbol = "&&"
 
-  override def eval(input: RowBatch): Any = {
-    val l = left.eval(input)
-    if (l == false) {
-       false
-    } else {
-      val r = right.eval(input)
-      if (r == false) {
-        false
-      } else {
-        if (l != null && r != null) {
-          true
-        } else {
-          null
-        }
-      }
-    }
+  override def eval(input: RowBatch): ColumnVector = {
+    val evalLeft = left.eval(input)
+    val evalRight = right.eval(input)
+
+    val selector = input.curSelector
+    val notNullArrayLeft = evalLeft.notNullArray
+    val notNullArrayRight = evalRight.notNullArray
+
+    val notNullArrayResult = andWithNull(notNullArrayLeft, notNullArrayRight, true)
+    val usefulPosArray = andWithNull(selector, notNullArrayResult, false)
+
+    val leftBitMap = evalLeft.content.asInstanceOf[BooleanMemory].bs
+    val rightBitMap = evalRight.content.asInstanceOf[BooleanMemory].bs
+
+    val resultBitMap = andWithNull(usefulPosArray, leftBitMap & rightBitMap, false)
+
+    val rcv = input.getVector(dataType, true)
+    rcv.setContent(new BooleanMemory(resultBitMap))
+    rcv.setNullable(notNullArrayResult)
+    rcv
   }
 }
 
-//TODO:
 case class BatchOr(left: BatchExpression, right: BatchExpression) extends BinaryBatchPredicate {
   def symbol = "||"
 
-  override def eval(input: RowBatch): Any = {
-    val l = left.eval(input)
-    if (l == true) {
-      true
-    } else {
-      val r = right.eval(input)
-      if (r == true) {
-        true
-      } else {
-        if (l != null && r != null) {
-          false
-        } else {
-          null
-        }
-      }
-    }
+  override def eval(input: RowBatch): ColumnVector = {
+    val evalLeft = left.eval(input)
+    val evalRight = right.eval(input)
+
+    val selector = input.curSelector
+    val notNullArrayLeft = evalLeft.notNullArray
+    val notNullArrayRight = evalRight.notNullArray
+
+    val notNullArrayResult = andWithNull(notNullArrayLeft, notNullArrayRight, true)
+    val usefulPosArray = andWithNull(selector, notNullArrayResult, false)
+
+    val leftBitMap = evalLeft.content.asInstanceOf[BooleanMemory].bs
+    val rightBitMap = evalRight.content.asInstanceOf[BooleanMemory].bs
+
+    val resultBitMap = andWithNull(usefulPosArray, leftBitMap | rightBitMap, false)
+
+    val rcv = input.getVector(dataType, true)
+    rcv.setContent(new BooleanMemory(resultBitMap))
+    rcv.setNullable(notNullArrayResult)
+    rcv
   }
 }
 
@@ -122,9 +111,97 @@ abstract class BinaryBatchComparison extends BinaryBatchPredicate {
   self: Product =>
 }
 
+/**
+ * Comparison rules: (TODO: check the rules)
+ *
+ * Types inside numeric type can be compared,
+ * types cross numeric type boundary would always yield false
+ * types out of numeric type and inside Native type can only compared with self type
+ * @param left
+ * @param right
+ */
 case class BatchEquals(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
   def symbol = "="
-  override def eval(input: RowBatch): Any = {
+  override def eval(input: RowBatch): ColumnVector = {
+
+    val leftdt = left.dataType
+    val rightdt = right.dataType
+    val resultType = BooleanType
+    (leftdt, rightdt) match {
+      case (l: NumericType, r: NumericType) =>
+        val evalLeft = left.eval(input)
+        val evalRight = right.eval(input)
+        val leftMemGetter = Memory.getValue(l).asInstanceOf[(Long) => l.JvmType]
+        val rightMemGetter = Memory.getValue(r).asInstanceOf[(Long) => r.JvmType]
+
+        val memInLeft = evalLeft.content
+        val memInRight = evalRight.content
+        val leftWidth = evalLeft.typeWidth
+        val rightWidth = evalRight.typeWidth
+        val blOut = new BitSet(input.rowNum)
+
+        //prepare bitmap for calculation
+        val notNullArray1 = evalLeft.notNullArray
+        val notNullArray2 = evalRight.notNullArray
+        val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
+        val selector = input.curSelector
+        val bitmap = andWithNull(notNullArrayResult, selector, false)
+
+        //iteratively calculate
+        if (bitmap != null) {
+          val iter = bitmap.iterator
+          var i = 0
+          while (iter.hasNext) {
+            i = iter.next()
+            val bl = (leftMemGetter(memInLeft.peer + i * leftWidth)
+              == rightMemGetter(memInRight.peer + i * rightWidth))
+            blOut.set(i, bl)
+          }
+        } else {
+          val rowNum = input.rowNum
+          var i = 0
+          while (i < rowNum) {
+            val bl = (leftMemGetter(memInLeft.peer + i * leftWidth)
+              == rightMemGetter(memInRight.peer + i * rightWidth))
+            blOut.set(i, bl)
+            i += 1
+          }
+        }
+
+        //free redundant memory
+        if(evalLeft.isTemp) memInLeft.free()
+        if(evalRight.isTemp) memInRight.free()
+
+        //prepare result
+        val rcv = input.getVector(resultType, true)
+        rcv.setContent(new BooleanMemory(blOut))
+        if (notNullArrayResult != null) {
+          rcv.setNullable(notNullArrayResult)
+        }
+        rcv
+
+      case (l1: NumericType, r1: NativeType) | (l2: NativeType, r2: NumericType) =>
+        //always false, don't need to calculate
+        val evalLeft = left.eval(input)
+        val evalRight = right.eval(input)
+
+        //prepare bitmap for calculation
+        val notNullArray1 = evalLeft.notNullArray
+        val notNullArray2 = evalRight.notNullArray
+        val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
+        val selector = input.curSelector
+        val bitmap = andWithNull(notNullArrayResult, selector, false)
+
+      case (BooleanType, BooleanType) =>
+
+      case (StringType, StringType) =>
+        sys.error(s"Type String does not support now")
+      case (TimestampType, TimestampType) =>
+        sys.error(s"Type timestamp does not support now")
+
+    }
+
+
     val l = left.eval(input)
     if (l == null) {
       null
@@ -154,111 +231,3 @@ case class BatchGreaterThanOrEqual(left: BatchExpression, right: BatchExpression
   def symbol = ">="
   override def eval(input: RowBatch): Any = c2b(input, left, right, _.gteq(_, _))
 }
-
-/**
-case class If(predicate: Expression, trueValue: Expression, falseValue: Expression)
-    extends Expression {
-
-  def children = predicate :: trueValue :: falseValue :: Nil
-  override def nullable = trueValue.nullable || falseValue.nullable
-  def references = children.flatMap(_.references).toSet
-  override lazy val resolved = childrenResolved && trueValue.dataType == falseValue.dataType
-  def dataType = {
-    if (!resolved) {
-      throw new UnresolvedException(
-        this,
-        s"Can not resolve due to differing types ${trueValue.dataType}, ${falseValue.dataType}")
-    }
-    trueValue.dataType
-  }
-
-  type EvaluatedType = Any
-
-  override def eval(input: Row): Any = {
-    if (true == predicate.eval(input)) {
-      trueValue.eval(input)
-    } else {
-      falseValue.eval(input)
-    }
-  }
-
-  override def toString = s"if ($predicate) $trueValue else $falseValue"
-}
-
-*/
-
-// scalastyle:off
-/**
- * Case statements of the form "CASE WHEN a THEN b [WHEN c THEN d]* [ELSE e] END".
- * Refer to this link for the corresponding semantics:
- * https://cwiki.apache.org/confluence/display/Hive/LanguageManual+UDF#LanguageManualUDF-ConditionalFunctions
- *
- * The other form of case statements "CASE a WHEN b THEN c [WHEN d THEN e]* [ELSE f] END" gets
- * translated to this form at parsing time.  Namely, such a statement gets translated to
- * "CASE WHEN a=b THEN c [WHEN a=d THEN e]* [ELSE f] END".
- *
- * Note that `branches` are considered in consecutive pairs (cond, val), and the optional last
- * element is the value for the default catch-all case (if provided). Hence, `branches` consists of
- * at least two elements, and can have an odd or even length.
-
-// scalastyle:on
-case class CaseWhen(branches: Seq[Expression]) extends Expression {
-  type EvaluatedType = Any
-  def children = branches
-  def references = children.flatMap(_.references).toSet
-  def dataType = {
-    if (!resolved) {
-      throw new UnresolvedException(this, "cannot resolve due to differing types in some branches")
-    }
-    branches(1).dataType
-  }
-
-  //@transient private[this] lazy val branchesArr = branches.toArray
-  //@transient private[this] lazy val predicates =
-    branches.sliding(2, 2).collect { case Seq(cond, _) => cond }.toSeq
-  //@transient private[this] lazy val values =
-    branches.sliding(2, 2).collect { case Seq(_, value) => value }.toSeq
-
-  override def nullable = {
-    // If no value is nullable and no elseValue is provided, the whole statement defaults to null.
-    values.exists(_.nullable) || (values.length % 2 == 0)
-  }
-
-  override lazy val resolved = {
-    if (!childrenResolved) {
-      false
-    } else {
-      val allCondBooleans = predicates.forall(_.dataType == BooleanType)
-      val dataTypesEqual = values.map(_.dataType).distinct.size <= 1
-      allCondBooleans && dataTypesEqual
-    }
-  }
-
-  /** Written in imperative fashion for performance considerations.  Same for CaseKeyWhen. */
-  override def eval(input: Row): Any = {
-    val len = branchesArr.length
-    var i = 0
-    // If all branches fail and an elseVal is not provided, the whole statement
-    // defaults to null, according to Hive's semantics.
-    var res: Any = null
-    while (i < len - 1) {
-      if (branchesArr(i).eval(input) == true) {
-        res = branchesArr(i + 1).eval(input)
-        return res
-      }
-      i += 2
-    }
-    if (i == len - 1) {
-      res = branchesArr(i).eval(input)
-    }
-    res
-  }
-
-  override def toString = {
-    "CASE" + branches.sliding(2, 2).map {
-      case Seq(cond, value) => s" WHEN $cond THEN $value"
-      case Seq(elseValue) => s" ELSE $elseValue"
-    }.mkString
-  }
-}
-*/
