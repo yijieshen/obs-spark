@@ -189,25 +189,50 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
         val notNullArray1 = evalLeft.notNullArray
         val notNullArray2 = evalRight.notNullArray
         val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
+
+        //free redundant memory
+        if(evalLeft.isTemp) evalLeft.content.free()
+        if(evalRight.isTemp) evalRight.content.free()
+
+        //prepare result
+        val rcv = input.getVector(resultType, true)
+        rcv.setContent(new BooleanMemory(new BitSet(input.rowNum)))
+        if (notNullArrayResult != null) {
+          rcv.setNullable(notNullArrayResult)
+        }
+        rcv
+
+      case (BooleanType, BooleanType) =>
+        val evalLeft = left.eval(input)
+        val evalRight = right.eval(input)
+
+        //prepare bitmap for calculation
+        val notNullArray1 = evalLeft.notNullArray
+        val notNullArray2 = evalRight.notNullArray
+        val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
         val selector = input.curSelector
         val bitmap = andWithNull(notNullArrayResult, selector, false)
 
-      case (BooleanType, BooleanType) =>
+        //calculate
+        val blLeft = evalLeft.content.asInstanceOf[BooleanMemory].bs
+        val blRight = evalRight.content.asInstanceOf[BooleanMemory].bs
+
+        val xnorResult = (blLeft ^ blRight).complement
+        val blResult = andWithNull(bitmap, xnorResult, false)
+
+        //prepare result
+        val rcv = input.getVector(resultType, true)
+        rcv.setContent(new BooleanMemory(blResult))
+        if (notNullArrayResult != null) {
+          rcv.setNullable(notNullArrayResult)
+        }
+        rcv
 
       case (StringType, StringType) =>
         sys.error(s"Type String does not support now")
       case (TimestampType, TimestampType) =>
         sys.error(s"Type timestamp does not support now")
 
-    }
-
-
-    val l = left.eval(input)
-    if (l == null) {
-      null
-    } else {
-      val r = right.eval(input)
-      if (r == null) null else l == r
     }
   }
 }
