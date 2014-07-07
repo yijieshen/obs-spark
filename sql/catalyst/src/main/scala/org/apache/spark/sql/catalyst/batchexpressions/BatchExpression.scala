@@ -1,11 +1,10 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
 import org.apache.spark.sql.catalyst.errors.TreeNodeException
-import org.apache.spark.sql.catalyst.expressions.{Expression, Row}
-import org.apache.spark.sql.catalyst.trees
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.types._
 
-abstract class BatchExpression extends Expression {
+trait BatchExpression extends Expression {
   self: Product =>
 
   /** The narrowest possible type that is produced when this expression is evaluated. */
@@ -424,8 +423,7 @@ abstract class BatchExpression extends Expression {
   }
 }
 
-abstract class BinaryBatchExpression extends BatchExpression
-    with trees.BinaryNode[BatchExpression] {
+abstract class BinaryBatchExpression extends BinaryExpression with BatchExpression {
 
   self: Product =>
 
@@ -438,14 +436,12 @@ abstract class BinaryBatchExpression extends BatchExpression
   override def toString = s"($left $symbol $right)"
 }
 
-abstract class LeafBatchExpression extends BatchExpression
-    with trees.LeafNode[BatchExpression] {
+abstract class LeafBatchExpression extends LeafExpression with BatchExpression {
 
   self: Product =>
 }
 
-abstract class UnaryBatchExpression extends BatchExpression
-    with trees.UnaryNode[BatchExpression] {
+abstract class UnaryBatchExpression extends UnaryExpression with BatchExpression {
 
   self: Product =>
 

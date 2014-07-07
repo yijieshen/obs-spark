@@ -55,7 +55,7 @@ abstract class BatchBinaryArithmetic extends BinaryBatchExpression {
 case class BatchAdd(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
   def symbol = "+"
 
-  override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, (numeric, x, y) => numeric.plus(x, y))
+  override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, _.plus(_, _))
 }
 
 case class BatchSubtract(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {

@@ -75,6 +75,8 @@ class BooleanColumnVector(rowNum: Int) extends ColumnVector(0, rowNum) {
   override def setContent(pool: MemoryPool) =
     throw new IllegalArgumentException(
       "Setting String Column Through MemoryPool are not supported currently")
+
+  def getSelector = content.asInstanceOf[BooleanMemory].bs
 }
 
 class BinaryColumnVector(rowNum: Int) extends ColumnVector(0, rowNum) {

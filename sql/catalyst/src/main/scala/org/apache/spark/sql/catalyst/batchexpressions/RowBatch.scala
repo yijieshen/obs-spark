@@ -1,5 +1,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
+import org.apache.spark.sql.catalyst.expressions.{Literal, Row}
 import org.apache.spark.sql.catalyst.types._
 
 import scala.collection.mutable.Map
@@ -8,6 +9,8 @@ class RowBatch(val rowNum: Int) {
 
   // the columns come from table or as result tuple
   val name2Vector = Map.empty[String, ColumnVector]
+
+  val name2Literal = Map.empty[String, Literal]
 
   // selector for the current rowbatch
   var curSelector: BitSet = null
@@ -24,6 +27,8 @@ class RowBatch(val rowNum: Int) {
     name2Vector.values.foreach(_.content.free())
     memPool.free()
   }
+
+  def expand : Array[Row] = ???
 
 }
 
