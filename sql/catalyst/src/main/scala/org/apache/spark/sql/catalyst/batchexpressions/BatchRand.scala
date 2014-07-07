@@ -22,13 +22,15 @@ import org.apache.spark.sql.catalyst.types.DoubleType
 
 
 case object BatchRand extends LeafBatchExpression {
+  type EvaluatedType = ColumnVector
+
   override def dataType = DoubleType
   override def nullable = false
   override def references = Set.empty
 
   private[this] lazy val rand = new Random
 
-  override def eval(input: RowBatch = null): ColumnVector = {
+  override def eval(input: RowBatch): EvaluatedType = {
     val memSetter = Memory.setValue(DoubleType).asInstanceOf[(Long, Double) => Unit]
     val typeWidth = 8
 

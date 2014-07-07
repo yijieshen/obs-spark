@@ -28,7 +28,7 @@ case class BatchUnaryMinus(child: BatchExpression) extends UnaryBatchExpression 
   def nullable = child.nullable
   override def toString = s"-$child"
 
-  override def eval(input: RowBatch): ColumnVector = {
+  override def eval(input: RowBatch): EvaluatedType = {
     n1b(child, input, _.negate(_))
   }
 }
@@ -55,25 +55,25 @@ abstract class BatchBinaryArithmetic extends BinaryBatchExpression {
 case class BatchAdd(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
   def symbol = "+"
 
-  override def eval(input: RowBatch): Any = n2b(input, left, right, (numeric, x, y) => numeric.plus(x, y))
+  override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, (numeric, x, y) => numeric.plus(x, y))
 }
 
 case class BatchSubtract(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
   def symbol = "-"
 
-  override def eval(input: RowBatch): Any = n2b(input, left, right, _.minus(_, _))
+  override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, _.minus(_, _))
 }
 
 case class BatchMultiply(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
   def symbol = "*"
 
-  override def eval(input: RowBatch): Any = n2b(input, left, right, _.times(_, _))
+  override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, _.times(_, _))
 }
 
 case class BatchDivide(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
   def symbol = "/"
 
-  override def eval(input: RowBatch): Any = dataType match {
+  override def eval(input: RowBatch): EvaluatedType = dataType match {
     case _: FractionalType => f2b(input, left, right, _.div(_, _))
     case _: IntegralType => i2b(input, left , right, _.quot(_, _))
   }
@@ -83,5 +83,5 @@ case class BatchDivide(left: BatchExpression, right: BatchExpression) extends Ba
 case class BatchRemainder(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
   def symbol = "%"
 
-  override def eval(input: RowBatch): Any = i2b(input, left, right, _.rem(_, _))
+  override def eval(input: RowBatch): EvaluatedType = i2b(input, left, right, _.rem(_, _))
 }

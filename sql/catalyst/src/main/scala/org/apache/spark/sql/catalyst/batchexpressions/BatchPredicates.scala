@@ -180,7 +180,7 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
         }
         rcv
 
-      case (l1: NumericType, r1: NativeType) | (l2: NativeType, r2: NumericType) =>
+      case (_ : NumericType, _ : NativeType) | (_ : NativeType, _ : NumericType) =>
         //always false, don't need to calculate
         val evalLeft = left.eval(input)
         val evalRight = right.eval(input)
@@ -239,20 +239,20 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
 
 case class BatchLessThan(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
   def symbol = "<"
-  override def eval(input: RowBatch): Any = c2b(input, left, right, _.lt(_, _))
+  override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.lt(_, _))
 }
 
 case class BatchLessThanOrEqual(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
   def symbol = "<="
-  override def eval(input: RowBatch): Any = c2b(input, left, right, _.lteq(_, _))
+  override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.lteq(_, _))
 }
 
 case class BatchGreaterThan(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
   def symbol = ">"
-  override def eval(input: RowBatch): Any = c2b(input, left, right, _.gt(_, _))
+  override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.gt(_, _))
 }
 
 case class BatchGreaterThanOrEqual(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
   def symbol = ">="
-  override def eval(input: RowBatch): Any = c2b(input, left, right, _.gteq(_, _))
+  override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.gteq(_, _))
 }

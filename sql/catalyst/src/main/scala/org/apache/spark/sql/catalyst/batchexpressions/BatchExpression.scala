@@ -14,7 +14,7 @@ abstract class BatchExpression extends Expression {
   override final def eval(input: Row = null) =
     throw new UnsupportedOperationException("Batch Expressions don't use this")
 
-  def eval(input: RowBatch = null): EvaluatedType
+  def eval(input: RowBatch): EvaluatedType
 
   /**
    * A set of helper functions that return the correct descendant of `scala.math.Numeric[T]` type
