@@ -3,7 +3,7 @@ package org.apache.spark.sql
 import org.apache.spark.sql.test.TestSQLContext._
 import org.apache.spark.sql.test._
 
-case class SYJT(key: String, a: Int, b: Int, c: Int)
+case class SYJT(key: String, a: Int, b: Double, c: Int)
 
 object SYJT {
   val t1: SchemaRDD = TestSQLContext.sparkContext.parallelize(

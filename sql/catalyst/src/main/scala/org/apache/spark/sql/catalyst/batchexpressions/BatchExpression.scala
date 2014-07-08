@@ -84,7 +84,7 @@ trait BatchExpression extends Expression {
       rb: RowBatch,
       e1: BatchExpression,
       e2: BatchExpression,
-      f: ((Numeric[Any], Any, Any) => Any)): ColumnVector  = {
+      f: ((Numeric[Any], Any, Any) => Any)): ColumnVector = {
 
     if (e1.dataType != e2.dataType) {
       throw new TreeNodeException(this, s"Types do not match ${e1.dataType} != ${e2.dataType}")

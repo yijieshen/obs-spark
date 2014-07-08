@@ -70,56 +70,6 @@ class Memory(val peer: Long, val size: Long) {
 
   import Memory._
 
-  //Integral Type
-  @inline def setByte(offset: Long, b: Byte): Unit = unsafe.putByte(peer + offset, b)
-
-  @inline def getByte(offset: Long): Byte = unsafe.getByte(peer + offset)
-
-  @inline def setShort(offset: Long, s: Short): Unit = unsafe.putShort(peer + offset, s)
-
-  @inline def getShort(offset: Long): Short = unsafe.getShort(peer + offset)
-
-
-
-
-  @inline def setInt(offset: Long, i: Int): Unit = unsafe.putInt(peer + offset, i)
-
-  @inline def getInt(offset: Long): Int = unsafe.getInt(peer + offset)
-
-  @inline def setLong(offset: Long, l: Long): Unit = unsafe.putLong(peer + offset, l)
-
-  @inline def getLong(offset: Long): Long = unsafe.getLong(peer + offset)
-
-  //Fractional Type
-  @inline def setDecimal: Unit = ???
-
-  @inline def getDecimal = ???
-
-  @inline def setFloat(offset: Long, f: Float): Unit = unsafe.putFloat(peer + offset, f)
-
-  @inline def getFloat(offset: Long): Float = unsafe.getFloat(peer + offset)
-
-  @inline def setDouble(offset: Long, d: Double): Unit = unsafe.putDouble(peer + offset, d)
-
-  @inline def getDouble(offset: Long): Double = unsafe.getDouble(peer + offset)
-
-  //Other Type
-
-  //BitMap implementaion?
-  def setBit = ???
-
-  //duplicate with bit?
-  def setBoolean = ???
-
-  //duplicate with byte?
-  def setBinary = ???
-
-  //performance vs long type
-  def setTimestamp = ???
-
-  //how do we implement string?
-  def setString = ???
-
   def free(): Unit = unsafe.freeMemory(peer)
 
   //TODO: Do we need this guard? Currently, this method was never used
@@ -147,5 +97,9 @@ class StringMemory(val strings: Array[String]) extends Memory(0, 0) {
 
 class BooleanMemory(val bs: BitSet) extends Memory(0, 0) {
   //on-heap, do nothing
+  override def free() {}
+}
+
+object NullMemory extends Memory(0, 0) {
   override def free() {}
 }

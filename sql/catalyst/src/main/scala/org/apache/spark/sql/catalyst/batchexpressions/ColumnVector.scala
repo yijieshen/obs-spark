@@ -45,6 +45,10 @@ abstract class ColumnVector (val typeWidth: Int, val rowNum: Int, val isTemp: Bo
       .toString
 }
 
+case class LiteralColumnVector(value: Any, dt: DataType) extends ColumnVector(0, 1, false) {
+  content = NullMemory
+}
+
 
 class DoubleColumnVector(rowNum: Int, isTemp: Boolean) extends ColumnVector(8, rowNum, isTemp) {
   val dt = DoubleType
