@@ -6,22 +6,22 @@ import scala.collection.mutable.Stack
  *
  * @param rowNum
  */
-class MemoryPool(val rowNum: Int) {
+class OffHeapMemoryPool(val rowNum: Int) {
 
   // one extra slot to make direct (columnType's size -> index) map
-  private val freeList = new Array[Stack[Memory]](MemoryPool.MAX_COLUMN_WIDTH + 1)
+  private val freeList = new Array[Stack[OffHeapMemory]](MemoryPool.MAX_COLUMN_WIDTH + 1)
 
-  freeList(8) = new Stack[Memory]
-  freeList(4) = new Stack[Memory]
-  freeList(2) = new Stack[Memory]
-  freeList(1) = new Stack[Memory]
+  freeList(8) = new Stack[OffHeapMemory]
+  freeList(4) = new Stack[OffHeapMemory]
+  freeList(2) = new Stack[OffHeapMemory]
+  freeList(1) = new Stack[OffHeapMemory]
 
-  private def _allocateNew(width: Int): Memory = {
-    val mem = Memory.allocate(width * rowNum)
+  private def _allocateNew(width: Int): OffHeapMemory = {
+    val mem = Memory.allocate(width, rowNum)
     mem
   }
 
-  def borrowMemory(width: Int): Memory = {
+  def borrowMemory(width: Int): OffHeapMemory = {
     val curStack = freeList(width)
     if (curStack.isEmpty) {
       _allocateNew(width)
@@ -31,13 +31,10 @@ class MemoryPool(val rowNum: Int) {
     }
   }
 
-  def returnMemory(width: Int, mem: Memory) = {
+  def returnMemory(width: Int, mem: OffHeapMemory) = {
     freeList(width).push(mem)
   }
 
-  /**
-   *
-   */
   def free() = {
     freeList(8).foreach(_.free())
     freeList(8) = null

@@ -12,9 +12,9 @@ case class BatchLiteral(value: Any, dataType: DataType) extends LeafBatchExpress
 
   override def toString = if (value != null) value.toString else "null"
 
-  type EvaluatedType = LiteralColumnVector
+  type EvaluatedType = ColumnVector
 
-  val v = LiteralColumnVector(value, dataType)
+  val v = ColumnVector.getLiteral(value, dataType)
 
   override def eval(input: RowBatch): ColumnVector = v
 }

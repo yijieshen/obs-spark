@@ -38,20 +38,20 @@ case class BatchNot(child: BatchExpression) extends UnaryBatchExpression with Ba
   override def toString = s"NOT $child"
 
   override def eval(input: RowBatch): ColumnVector = {
-    val evalE = child.eval(input)
+    val childCV = child.eval(input)
 
     val selector = input.curSelector
-    val notNullArray = evalE.notNullArray
+    val notNullArray = childCV.notNullArray
     val bitmap = andWithNull(selector, notNullArray, false)
 
-    val rstComple = evalE.content.asInstanceOf[BooleanMemory].bs.complement
+    val childBM = childCV.content.asInstanceOf[BooleanMemory]
+    val rstComple = childBM.bs.complement
     val resultBitmap = andWithNull(bitmap, rstComple, false)
 
-    val rcv = input.getVector(dataType, true)
-    rcv.setContent(new BooleanMemory(resultBitmap))
-    rcv.setNullable(notNullArray)
-
-    rcv
+    val resultBM = childBM.copy(resultBitmap)
+    val resultCV = new BooleanColumnVector(resultBM, false)
+    resultCV.notNullArray = notNullArray
+    resultCV
   }
 }
 
@@ -69,15 +69,16 @@ case class BatchAnd(left: BatchExpression, right: BatchExpression) extends Binar
     val notNullArrayResult = andWithNull(notNullArrayLeft, notNullArrayRight, true)
     val usefulPosArray = andWithNull(selector, notNullArrayResult, false)
 
-    val leftBitMap = evalLeft.content.asInstanceOf[BooleanMemory].bs
+    val leftBoolM = evalLeft.content.asInstanceOf[BooleanMemory]
+    val leftBitMap = leftBoolM.bs
     val rightBitMap = evalRight.content.asInstanceOf[BooleanMemory].bs
 
     val resultBitMap = andWithNull(usefulPosArray, leftBitMap & rightBitMap, false)
 
-    val rcv = input.getVector(dataType, true)
-    rcv.setContent(new BooleanMemory(resultBitMap))
-    rcv.setNullable(notNullArrayResult)
-    rcv
+    val resultBM = leftBoolM.copy(resultBitMap)
+    val resultCV = new BooleanColumnVector(resultBM, false)
+    resultCV.notNullArray = notNullArrayResult
+    resultCV
   }
 }
 
@@ -95,15 +96,16 @@ case class BatchOr(left: BatchExpression, right: BatchExpression) extends Binary
     val notNullArrayResult = andWithNull(notNullArrayLeft, notNullArrayRight, true)
     val usefulPosArray = andWithNull(selector, notNullArrayResult, false)
 
-    val leftBitMap = evalLeft.content.asInstanceOf[BooleanMemory].bs
+    val leftBoolM = evalLeft.content.asInstanceOf[BooleanMemory]
+    val leftBitMap = leftBoolM.bs
     val rightBitMap = evalRight.content.asInstanceOf[BooleanMemory].bs
 
     val resultBitMap = andWithNull(usefulPosArray, leftBitMap | rightBitMap, false)
 
-    val rcv = input.getVector(dataType, true)
-    rcv.setContent(new BooleanMemory(resultBitMap))
-    rcv.setNullable(notNullArrayResult)
-    rcv
+    val resultBM = leftBoolM.copy(resultBitMap)
+    val resultCV = new BooleanColumnVector(resultBM, false)
+    resultCV.notNullArray = notNullArrayResult
+    resultCV
   }
 }
 
@@ -129,20 +131,16 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
     val resultType = BooleanType
     (leftdt, rightdt) match {
       case (l: NumericType, r: NumericType) =>
-        val evalLeft = left.eval(input)
-        val evalRight = right.eval(input)
-        val leftMemGetter = Memory.getValue(l).asInstanceOf[(Long) => l.JvmType]
-        val rightMemGetter = Memory.getValue(r).asInstanceOf[(Long) => r.JvmType]
+        val leftCV = left.eval(input)
+        val rightCV = right.eval(input)
+        val leftGet = (leftCV.get _).asInstanceOf[(Int) => l.JvmType]
+        val rightGet = (rightCV.get _).asInstanceOf[(Int) => r.JvmType]
 
-        val memInLeft = evalLeft.content
-        val memInRight = evalRight.content
-        val leftWidth = evalLeft.typeWidth
-        val rightWidth = evalRight.typeWidth
         val blOut = new BitSet(input.rowNum)
 
         //prepare bitmap for calculation
-        val notNullArray1 = evalLeft.notNullArray
-        val notNullArray2 = evalRight.notNullArray
+        val notNullArray1 = leftCV.notNullArray
+        val notNullArray2 = rightCV.notNullArray
         val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
         val selector = input.curSelector
         val bitmap = andWithNull(notNullArrayResult, selector, false)
@@ -153,32 +151,30 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
           var i = 0
           while (iter.hasNext) {
             i = iter.next()
-            val bl = (leftMemGetter(memInLeft.peer + i * leftWidth)
-              == rightMemGetter(memInRight.peer + i * rightWidth))
-            blOut.set(i, bl)
+            blOut.set(i, leftGet(i) == rightGet(i))
           }
         } else {
           val rowNum = input.rowNum
           var i = 0
           while (i < rowNum) {
-            val bl = (leftMemGetter(memInLeft.peer + i * leftWidth)
-              == rightMemGetter(memInRight.peer + i * rightWidth))
-            blOut.set(i, bl)
+            blOut.set(i, leftGet(i) == rightGet(i))
             i += 1
           }
         }
 
         //free redundant memory
-        if(evalLeft.isTemp) memInLeft.free()
-        if(evalRight.isTemp) memInRight.free()
+        if(leftCV.isTemp && !leftCV.isInstanceOf[FakeColumnVector])
+          input.returnMemory(leftCV.typeWidth, leftCV.content.asInstanceOf[OffHeapMemory])
+        if(rightCV.isTemp && !rightCV.isInstanceOf[FakeColumnVector])
+          input.returnMemory(rightCV.typeWidth, rightCV.content.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val rcv = input.getVector(resultType, true)
-        rcv.setContent(new BooleanMemory(blOut))
+        val outputMem = new BooleanMemory(blOut, input.rowNum)
+        val outputCV = new BooleanColumnVector(outputMem, false)
         if (notNullArrayResult != null) {
-          rcv.setNullable(notNullArrayResult)
+          outputCV.notNullArray = notNullArrayResult
         }
-        rcv
+        outputCV
 
       case (_ : NumericType, _ : NativeType) | (_ : NativeType, _ : NumericType) =>
         //always false, don't need to calculate
@@ -191,16 +187,22 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
         val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
 
         //free redundant memory
-        if(evalLeft.isTemp) evalLeft.content.free()
-        if(evalRight.isTemp) evalRight.content.free()
+        if(evalLeft.isTemp &&
+          !evalLeft.isInstanceOf[FakeColumnVector] &&
+          evalLeft.content.isInstanceOf[OffHeapMemory])
+          input.returnMemory(evalLeft.typeWidth, evalLeft.content.asInstanceOf[OffHeapMemory])
+        if(evalRight.isTemp &&
+          !evalRight.isInstanceOf[FakeColumnVector] &&
+          evalRight.content.isInstanceOf[OffHeapMemory])
+          input.returnMemory(evalRight.typeWidth, evalRight.content.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val rcv = input.getVector(resultType, true)
-        rcv.setContent(new BooleanMemory(new BitSet(input.rowNum)))
+        val outputMem = new BooleanMemory(new BitSet(input.rowNum), input.rowNum)
+        val outputCV = new BooleanColumnVector(outputMem, false)
         if (notNullArrayResult != null) {
-          rcv.setNullable(notNullArrayResult)
+          outputCV.notNullArray = notNullArrayResult
         }
-        rcv
+        outputCV
 
       case (BooleanType, BooleanType) =>
         val evalLeft = left.eval(input)
@@ -214,19 +216,18 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
         val bitmap = andWithNull(notNullArrayResult, selector, false)
 
         //calculate
-        val blLeft = evalLeft.content.asInstanceOf[BooleanMemory].bs
+        val leftBoolM = evalLeft.content.asInstanceOf[BooleanMemory]
+        val blLeft = leftBoolM.bs
         val blRight = evalRight.content.asInstanceOf[BooleanMemory].bs
 
         val xnorResult = (blLeft ^ blRight).complement
         val blResult = andWithNull(bitmap, xnorResult, false)
 
         //prepare result
-        val rcv = input.getVector(resultType, true)
-        rcv.setContent(new BooleanMemory(blResult))
-        if (notNullArrayResult != null) {
-          rcv.setNullable(notNullArrayResult)
-        }
-        rcv
+        val resultBM = leftBoolM.copy(blResult)
+        val resultCV = new BooleanColumnVector(resultBM, false)
+        resultCV.notNullArray = notNullArrayResult
+        resultCV
 
       case (StringType, StringType) =>
         sys.error(s"Type String does not support now")

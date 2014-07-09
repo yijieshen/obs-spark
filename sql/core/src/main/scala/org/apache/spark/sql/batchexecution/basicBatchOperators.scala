@@ -28,7 +28,7 @@ case class BatchFilter(condition: BatchExpression, child: SparkBatchPlan) extend
 
   override def execute() = child.execute().mapPartitions { iter =>
     iter.map{ rowBatch =>
-      val selector = condition.eval(rowBatch).asInstanceOf[BooleanColumnVector].getSelector
+      val selector = condition.eval(rowBatch).asInstanceOf[BooleanColumnVector].bitset
       rowBatch.curSelector = selector
       rowBatch
     }

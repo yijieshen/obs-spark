@@ -1,7 +1,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
-import org.apache.spark.sql.catalyst.expressions.{Literal, Row}
-import org.apache.spark.sql.catalyst.types._
+import org.apache.spark.sql.catalyst.expressions.Row
 
 import scala.collection.mutable.Map
 
@@ -10,25 +9,23 @@ class RowBatch(val rowNum: Int) {
   // the columns come from table or as result tuple
   val name2Vector = Map.empty[String, ColumnVector]
 
-  val name2Literal = Map.empty[String, Literal]
-
   // selector for the current rowbatch
   var curSelector: BitSet = null
 
-  val memPool = new MemoryPool(rowNum)
+  val memPool = new OffHeapMemoryPool(rowNum)
 
-  def getTmpMemory(width: Int) = memPool.borrowMemory(width)
+  def getTmpMemory(width: Int): OffHeapMemory =
+    memPool.borrowMemory(width)
 
-  def getVector(dt: DataType, isTmp: Boolean = false) = {
-    ColumnVector.getNewCV(dt, rowNum, isTmp)
-  }
+  def returnMemory(width: Int, mem: OffHeapMemory) =
+    memPool.returnMemory(width, mem)
 
   def free() = {
     name2Vector.values.foreach(_.content.free())
     memPool.free()
   }
 
-  def expand : Array[Row] = ???
+  def expand: Array[Row] = ???
 
 }
 

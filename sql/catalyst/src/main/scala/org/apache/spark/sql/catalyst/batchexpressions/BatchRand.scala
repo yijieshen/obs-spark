@@ -31,11 +31,12 @@ case object BatchRand extends LeafBatchExpression {
   private[this] lazy val rand = new Random
 
   override def eval(input: RowBatch): EvaluatedType = {
-    val memSetter = Memory.setValue(DoubleType).asInstanceOf[(Long, Double) => Unit]
-    val typeWidth = 8
 
     //TODO: what's the right type of random output vector? currently it was set to Double
-    val memOut = input.getTmpMemory(typeWidth)
+    val width = 8
+    val tmpMem = input.getTmpMemory(width)
+    val outputCV = ColumnVector.getOffHeapCV(DoubleType, tmpMem.asInstanceOf[OffHeapMemory], true)
+    val set = (outputCV.set _).asInstanceOf[(Int, Double) => Unit]
 
     val selector = input.curSelector
 
@@ -44,20 +45,17 @@ case object BatchRand extends LeafBatchExpression {
       var i = 0
       while (iter.hasNext) {
         i = iter.next()
-        memSetter(memOut.peer + i * typeWidth, rand.nextDouble())
+        set(i, rand.nextDouble())
       }
     } else {
       val rowNum = input.rowNum
       var i = 0
       while (i < rowNum) {
-        memSetter(memOut.peer + i * typeWidth, rand.nextDouble())
+        set(i, rand.nextDouble())
         i += 1
       }
     }
-
-    val rcv = input.getVector(DoubleType, true)
-    rcv.setContent(memOut)
-    rcv
+    outputCV
   }
 
   override def toString = "RAND()"

@@ -1,115 +1,204 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
-import com.google.common.base.{Objects => GObjs}
 import org.apache.spark.sql.catalyst.types._
+import Memory._
 
-abstract class ColumnVector (val typeWidth: Int, val rowNum: Int, val isTemp: Boolean = false) {
+abstract class ColumnVector(val isTemp: Boolean = false) {
 
   def dt: DataType
+  def typeWidth: Int
 
-  //TODO: do we need nullable?
-  var nullable: Boolean = false
+  type fieldType <: Any
+
+  def content: Memory
+
   //(null -> 0) (notNull -> 1)
   var notNullArray: BitSet = _
 
-  def setNullable(notNullbm: BitSet) = {
-    nullable = true
-    notNullArray = notNullbm
-  }
+  def get(i: Int): fieldType
+  def set(i: Int, v: fieldType)
 
-  //TODO: Currently, we don't use these two fields for per columnVector selector,
-  //maybe an optimization later, use private[this] to hide
-  private[this] var withSelector: Boolean = false
-  private[this] var selector: BitSet = _
-
-  private[this] def setSelector(sbm: BitSet) = {
-    withSelector = true
-    selector = sbm
-  }
-
-  //content
-  var content: Memory = _
-
-  def setContent(pool: MemoryPool) = {
-    content = pool.borrowMemory(typeWidth)
-  }
-
-  def setContent(mem: Memory) = {
-    content = mem
-  }
-
-  override def toString =
-    GObjs.toStringHelper(this)
-      .add("nullable", nullable)
-      .add("withSelector", withSelector)
-      .toString
 }
 
-case class LiteralColumnVector(value: Any, dt: DataType) extends ColumnVector(0, 1, false) {
-  content = NullMemory
-}
-
-
-class DoubleColumnVector(rowNum: Int, isTemp: Boolean) extends ColumnVector(8, rowNum, isTemp) {
+class DoubleColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = DoubleType.JvmType
   val dt = DoubleType
+  val typeWidth = 8
+  lazy val peer = content.peer
+  def get(i: Int) = unsafe.getDouble(peer + i * typeWidth)
+  def set(i: Int, v: fieldType) = unsafe.putDouble(peer + i * typeWidth, v)
 }
 
-class LongColumnVector(rowNum: Int, isTemp: Boolean) extends ColumnVector(8, rowNum, isTemp) {
+class LongColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = LongType.JvmType
   val dt = LongType
+  val typeWidth = 8
+  lazy val peer = content.peer
+  def get(i: Int) = unsafe.getLong(peer + i * typeWidth)
+  def set(i: Int, v: fieldType) = unsafe.putLong(peer + i * typeWidth, v)
 }
 
-class IntColumnVector(rowNum: Int, isTemp: Boolean) extends ColumnVector(4, rowNum, isTemp) {
+class IntColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = IntegerType.JvmType
   val dt = IntegerType
+  val typeWidth = 4
+  lazy val peer = content.peer
+  def get(i: Int) = unsafe.getInt(peer + i * typeWidth)
+  def set(i: Int, v: fieldType) = unsafe.putInt(peer + i * typeWidth, v)
 }
 
-class FloatColumnVector(rowNum: Int, isTemp: Boolean) extends ColumnVector(4, rowNum, isTemp) {
+class FloatColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = FloatType.JvmType
   val dt = FloatType
+  val typeWidth = 4
+  lazy val peer = content.peer
+  def get(i: Int) = unsafe.getFloat(peer + i * typeWidth)
+  def set(i: Int, v: fieldType) = unsafe.putFloat(peer + i * typeWidth, v)
 }
 
-class ShortColumnVector(rowNum: Int, isTemp: Boolean) extends ColumnVector(2, rowNum, isTemp) {
+class ShortColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = ShortType.JvmType
   val dt = ShortType
+  val typeWidth = 2
+  lazy val peer = content.peer
+  def get(i: Int) = unsafe.getShort(peer + i * typeWidth)
+  def set(i: Int, v: fieldType) = unsafe.putShort(peer + i * typeWidth, v)
 }
 
-class ByteColumnVector(rowNum: Int, isTemp: Boolean) extends ColumnVector(1, rowNum, isTemp) {
+class ByteColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = ByteType.JvmType
   val dt = ByteType
+  val typeWidth = 1
+  val peer = content.peer
+  def get(i: Int) = unsafe.getByte(peer + i * typeWidth)
+  def set(i: Int, v: fieldType) = unsafe.putByte(peer + i * typeWidth, v)
 }
 
-class BooleanColumnVector(rowNum: Int) extends ColumnVector(0, rowNum) {
-  val dt = BooleanType
-  override def setContent(pool: MemoryPool) =
-    throw new IllegalArgumentException(
-      "Setting String Column Through MemoryPool are not supported currently")
-
-  def getSelector = content.asInstanceOf[BooleanMemory].bs
-}
-
-class BinaryColumnVector(rowNum: Int) extends ColumnVector(0, rowNum) {
-  val dt = BinaryType
-  override def setContent(pool: MemoryPool) =
-    throw new IllegalArgumentException(
-      "Setting String Column Through MemoryPool are not supported currently")
-}
-
-class StringColumnVector(rowNum: Int) extends ColumnVector(0, rowNum) {
+class StringColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = String
   val dt = StringType
-  override def setContent(pool: MemoryPool) =
-    throw new IllegalArgumentException(
-      "Setting String Column Through MemoryPool are not supported currently")
+  val typeWidth = 0
+  val strings = content.asInstanceOf[StringMemory].strings
+  def get(i: Int) = strings(i)
+  def set(i: Int, v: fieldType) = strings(i) = v
 }
 
+class BinaryColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = Array[Byte]
+  val dt = BinaryType
+  val typeWidth = 0
+  def get(i: Int) = ???
+  def set(i: Int, v: fieldType) = ???
+}
+
+class BooleanColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
+  type fieldType = Boolean
+  val dt = BooleanType
+  val typeWidth = 0
+  val bitset = content.asInstanceOf[BooleanMemory].bs
+  def get(i: Int) = bitset.get(i)
+  def set(i: Int, v: fieldType) = bitset.set(i, v)
+}
+
+abstract class FakeColumnVector extends ColumnVector(false) {
+  val content = NullMemory
+}
+
+class DoubleLiteral(val value: Double) extends FakeColumnVector {
+  type fieldType = DoubleType.JvmType
+  val dt = DoubleType
+  val typeWidth = 8
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Double cannot set")
+}
+
+class LongLiteral(val value: Long) extends FakeColumnVector {
+  type fieldType = LongType.JvmType
+  val dt = LongType
+  val typeWidth = 8
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Long cannot set")
+}
+
+class IntLiteral(val value: Int) extends FakeColumnVector {
+  type fieldType = IntegerType.JvmType
+  val dt = IntegerType
+  val typeWidth = 4
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Int cannot set")
+}
+
+class FloatLiteral(val value: Float) extends FakeColumnVector {
+  type fieldType = FloatType.JvmType
+  val dt = FloatType
+  val typeWidth = 4
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Float cannot set")
+}
+
+class ShortLiteral(val value: Short) extends FakeColumnVector {
+  type fieldType = ShortType.JvmType
+  val dt = ShortType
+  val typeWidth = 2
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Short cannot set")
+}
+
+class ByteLiteral(val value: Byte) extends FakeColumnVector {
+  type fieldType = ByteType.JvmType
+  val dt = ByteType
+  val typeWidth = 1
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Byte cannot set")
+}
+
+class StringLiteral(val value: String) extends FakeColumnVector {
+  type fieldType = String
+  val dt = StringType
+  val typeWidth = 0
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal String cannot set")
+}
+
+class BinaryLiteral(val value: Array[Byte]) extends FakeColumnVector {
+  type fieldType = Array[Byte]
+  val dt = BinaryType
+  val typeWidth = 0
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Binary cannot set")
+}
+
+class BooleanLiteral(val value: Boolean) extends FakeColumnVector {
+  type fieldType = Boolean
+  val dt = BooleanType
+  val typeWidth = 0
+  def get(i: Int) = value
+  def set(i: Int, v: fieldType) = sys.error(s"Literal Boolean cannot set")
+}
 
 object ColumnVector {
-  def getNewCV(dt: DataType, rowNum: Int, isTmp: Boolean) = {
+  def getOffHeapCV(dt: DataType, content: OffHeapMemory, isTmp: Boolean) = {
     dt match {
-      case DoubleType => new DoubleColumnVector(rowNum, isTmp)
-      case LongType => new LongColumnVector(rowNum, isTmp)
-      case IntegerType => new IntColumnVector(rowNum, isTmp)
-      case FloatType => new FloatColumnVector(rowNum, isTmp)
-      case ShortType => new ShortColumnVector(rowNum, isTmp)
-      case ByteType => new ByteColumnVector(rowNum, isTmp)
-      case BooleanType => new BooleanColumnVector(rowNum)
-      case BinaryType => new BinaryColumnVector(rowNum)
-      case StringType => new StringColumnVector(rowNum)
+      case DoubleType => new DoubleColumnVector(content, isTmp)
+      case LongType => new LongColumnVector(content, isTmp)
+      case IntegerType => new IntColumnVector(content, isTmp)
+      case FloatType => new FloatColumnVector(content, isTmp)
+      case ShortType => new ShortColumnVector(content, isTmp)
+      case ByteType => new ByteColumnVector(content, isTmp)
+    }
+  }
+
+  def getLiteral(value: Any, dt: DataType) = {
+    dt match {
+      case DoubleType => new DoubleLiteral(value.asInstanceOf[Double])
+      case LongType => new LongLiteral(value.asInstanceOf[Long])
+      case IntegerType => new IntLiteral(value.asInstanceOf[Int])
+      case FloatType => new FloatLiteral(value.asInstanceOf[Float])
+      case ShortType => new ShortLiteral(value.asInstanceOf[Short])
+      case ByteType => new ByteLiteral(value.asInstanceOf[Byte])
+      case StringType => new StringLiteral(value.asInstanceOf[String])
+      case BinaryType => new BinaryLiteral(value.asInstanceOf[Array[Byte]])
+      case BooleanType => new BooleanLiteral(value.asInstanceOf[Boolean])
     }
   }
 }

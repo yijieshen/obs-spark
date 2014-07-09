@@ -22,23 +22,24 @@ trait BatchExpression extends Expression {
   @inline
   def n1b(e: BatchExpression, rb: RowBatch, f: ((Numeric[Any], Any) => Any)): ColumnVector = {
     val resultType = e.dataType
-    val evalE = e.eval(rb)
-    val width = evalE.typeWidth
+    val childCV = e.eval(rb)
+    val width = childCV.typeWidth
 
     resultType match {
       case nt: NumericType =>
         //prepare function
-        val memSetter = Memory.setValue(resultType).asInstanceOf[(Long, nt.JvmType) => Unit]
-        val memGetter = Memory.getValue(resultType).asInstanceOf[(Long) => nt.JvmType]
+        val get = (childCV.get _).asInstanceOf[(Int) => nt.JvmType]
         val castedF = f.asInstanceOf[(Numeric[nt.JvmType], nt.JvmType) => nt.JvmType]
 
-        //prepare input & output memory
-        val memIn = evalE.content
-        val memOut = if (evalE.isTemp) evalE.content else rb.getTmpMemory(width)
+        //prepare output memory
+        val memIn = childCV.content
+        val memOut = if (childCV.isTemp) childCV.content else rb.getTmpMemory(width)
+        val outputCV = ColumnVector.getOffHeapCV(nt, memOut.asInstanceOf[OffHeapMemory], true)
+        val set = (outputCV.set _).asInstanceOf[(Int, nt.JvmType) => Unit]
 
         //prepare bitmap for calculation
         val selector = rb.curSelector
-        val notNullArray = evalE.notNullArray
+        val notNullArray = childCV.notNullArray
 
         val bitmap = andWithNull(selector, notNullArray, false)
 
@@ -48,15 +49,13 @@ trait BatchExpression extends Expression {
           var i = 0
           while (iter.hasNext) {
             i = iter.next()
-            val cr = castedF(nt.numeric, memGetter(memIn.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(nt.numeric, get(i)))
           }
         } else {
-          val rowNum = evalE.rowNum
+          val rowNum = rb.rowNum
           var i = 0
           while (i < rowNum) {
-            val cr = castedF(nt.numeric, memGetter(memIn.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(nt.numeric, get(i)))
             i += 1
           }
         }
@@ -64,12 +63,10 @@ trait BatchExpression extends Expression {
         //free redundant memory
 
         //prepare result
-        val rcv = rb.getVector(resultType, true)
-        rcv.setContent(memOut)
         if (notNullArray != null) {
-          rcv.setNullable(notNullArray.copy)
+          outputCV.notNullArray = notNullArray
         }
-        rcv
+        outputCV
       case other => sys.error(s"Type $other does not support numeric operations")
     }
   }
@@ -90,24 +87,26 @@ trait BatchExpression extends Expression {
       throw new TreeNodeException(this, s"Types do not match ${e1.dataType} != ${e2.dataType}")
     }
 
-    val evalE1 = e1.eval(rb)
-    val evalE2 = e2.eval(rb)
+    val leftCV = e1.eval(rb)
+    val rightCV = e2.eval(rb)
     val resultType = e1.dataType
-    val width = evalE1.typeWidth
+    val width = leftCV.typeWidth
 
     resultType match {
       case nt: NumericType =>
         //function prepare
-        val memSetter = Memory.setValue(resultType).asInstanceOf[(Long, nt.JvmType) => Unit]
-        val memGetter = Memory.getValue(resultType).asInstanceOf[(Long) => nt.JvmType]
+        val leftGet = (leftCV.get _).asInstanceOf[(Int) => nt.JvmType]
+        val rightGet = (rightCV.get _).asInstanceOf[(Int) => nt.JvmType]
         val castedF = f.asInstanceOf[(Numeric[nt.JvmType], nt.JvmType, nt.JvmType) => nt.JvmType]
 
-        //prepare input & output memory
-        val (memIn1, memIn2, memOut, memToFree) = memoryPrepare(evalE1, evalE2, rb, width)
+        //prepare output memory
+        val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
+        val outputCV = ColumnVector.getOffHeapCV(nt, memOut.asInstanceOf[OffHeapMemory], true)
+        val set = (outputCV.set _).asInstanceOf[(Int, nt.JvmType) => Unit]
 
         //prepare bitmap for calculation
-        val notNullArray1 = evalE1.notNullArray
-        val notNullArray2 = evalE2.notNullArray
+        val notNullArray1 = leftCV.notNullArray
+        val notNullArray2 = rightCV.notNullArray
         val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
         val selector = rb.curSelector
         val bitmap = andWithNull(notNullArrayResult, selector, false)
@@ -118,33 +117,25 @@ trait BatchExpression extends Expression {
           var i = 0
           while (iter.hasNext) {
             i = iter.next()
-            val cr = castedF(nt.numeric,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(nt.numeric, leftGet(i), rightGet(i)))
           }
         } else {
           val rowNum = rb.rowNum
           var i = 0
           while (i < rowNum) {
-            val cr = castedF(nt.numeric,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(nt.numeric, leftGet(i), rightGet(i)))
             i += 1
           }
         }
 
         //free redundant memory
-        if(memToFree != null) memToFree.free()
+        if(memToFree != null) rb.returnMemory(width, memToFree.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val rcv = rb.getVector(resultType, true)
-        rcv.setContent(memOut)
         if (notNullArrayResult != null) {
-          rcv.setNullable(notNullArrayResult)
+          outputCV.notNullArray = notNullArrayResult
         }
-        rcv
+        outputCV
 
       case other => sys.error(s"Type $other does not support numeric operations")
     }
@@ -166,24 +157,27 @@ trait BatchExpression extends Expression {
       throw new TreeNodeException(this, s"Types do not match ${e1.dataType} != ${e2.dataType}")
     }
 
-    val evalE1 = e1.eval(rb)
-    val evalE2 = e2.eval(rb)
+    val leftCV = e1.eval(rb)
+    val rightCV = e2.eval(rb)
     val resultType = e1.dataType
-    val width = evalE1.typeWidth
+    val width = leftCV.typeWidth
 
     resultType match {
       case ft: FractionalType =>
         //function prepare
-        val memSetter = Memory.setValue(resultType).asInstanceOf[(Long, ft.JvmType) => Unit]
-        val memGetter = Memory.getValue(resultType).asInstanceOf[(Long) => ft.JvmType]
+        val leftGet = (leftCV.get _).asInstanceOf[(Int) => ft.JvmType]
+        val rightGet = (rightCV.get _).asInstanceOf[(Int) => ft.JvmType]
         val castedF = f.asInstanceOf[(Fractional[ft.JvmType], ft.JvmType, ft.JvmType) => ft.JvmType]
 
-        //prepare input & output memory
-        val (memIn1, memIn2, memOut, memToFree) = memoryPrepare(evalE1, evalE2, rb, width)
+        //prepare output vector
+        val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
+        val outputCV = ColumnVector.getOffHeapCV(ft, memOut.asInstanceOf[OffHeapMemory], true)
+        val set = (outputCV.set _).asInstanceOf[(Int, ft.JvmType) => Unit]
+
 
         //prepare bitmap for calculation
-        val notNullArray1 = evalE1.notNullArray
-        val notNullArray2 = evalE2.notNullArray
+        val notNullArray1 = leftCV.notNullArray
+        val notNullArray2 = rightCV.notNullArray
         val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
         val selector = rb.curSelector
         val bitmap = andWithNull(notNullArrayResult, selector, false)
@@ -194,33 +188,25 @@ trait BatchExpression extends Expression {
           var i = 0
           while (iter.hasNext) {
             i = iter.next()
-            val cr = castedF(ft.fractional,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(ft.fractional, leftGet(i), rightGet(i)))
           }
         } else {
           val rowNum = rb.rowNum
           var i = 0
           while (i < rowNum) {
-            val cr = castedF(ft.fractional,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(ft.fractional, leftGet(i), rightGet(i)))
             i += 1
           }
         }
 
         //free redundant memory
-        if(memToFree != null) memToFree.free()
+        if(memToFree != null) rb.returnMemory(width, memToFree.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val rcv = rb.getVector(resultType, true)
-        rcv.setContent(memOut)
         if (notNullArrayResult != null) {
-          rcv.setNullable(notNullArrayResult)
+          outputCV.notNullArray = notNullArrayResult
         }
-        rcv
+        outputCV
 
       case other => sys.error(s"Type $other does not support numeric operations")
     }
@@ -242,24 +228,26 @@ trait BatchExpression extends Expression {
       throw new TreeNodeException(this, s"Types do not match ${e1.dataType} != ${e2.dataType}")
     }
 
-    val evalE1 = e1.eval(rb)
-    val evalE2 = e2.eval(rb)
+    val leftCV = e1.eval(rb)
+    val rightCV = e2.eval(rb)
     val resultType = e1.dataType
-    val width = evalE1.typeWidth
+    val width = leftCV.typeWidth
 
     resultType match {
       case it: IntegralType =>
         //function prepare
-        val memSetter = Memory.setValue(resultType).asInstanceOf[(Long, it.JvmType) => Unit]
-        val memGetter = Memory.getValue(resultType).asInstanceOf[(Long) => it.JvmType]
+        val leftGet = (leftCV.get _).asInstanceOf[(Int) => it.JvmType]
+        val rightGet = (rightCV.get _).asInstanceOf[(Int) => it.JvmType]
         val castedF = f.asInstanceOf[(Integral[it.JvmType], it.JvmType, it.JvmType) => it.JvmType]
 
         //prepare input & output memory
-        val (memIn1, memIn2, memOut, memToFree) = memoryPrepare(evalE1, evalE2, rb, width)
+        val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
+        val outputCV = ColumnVector.getOffHeapCV(it, memOut.asInstanceOf[OffHeapMemory], true)
+        val set = (outputCV.set _).asInstanceOf[(Int, it.JvmType) => Unit]
 
         //prepare bitmap for calculation
-        val notNullArray1 = evalE1.notNullArray
-        val notNullArray2 = evalE2.notNullArray
+        val notNullArray1 = leftCV.notNullArray
+        val notNullArray2 = rightCV.notNullArray
         val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
         val selector = rb.curSelector
         val bitmap = andWithNull(notNullArrayResult, selector, false)
@@ -270,33 +258,26 @@ trait BatchExpression extends Expression {
           var i = 0
           while (iter.hasNext) {
             i = iter.next()
-            val cr = castedF(it.integral,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(it.integral, leftGet(i), rightGet(i)))
           }
         } else {
           val rowNum = rb.rowNum
           var i = 0
           while (i < rowNum) {
-            val cr = castedF(it.integral,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            memSetter(memOut.peer + i * width, cr)
+            set(i, castedF(it.integral, leftGet(i), rightGet(i)))
             i += 1
           }
         }
 
         //free redundant memory
-        if(memToFree != null) memToFree.free()
+        if(memToFree != null)
+          rb.returnMemory(width, memToFree.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val rcv = rb.getVector(resultType, true)
-        rcv.setContent(memOut)
         if (notNullArrayResult != null) {
-          rcv.setNullable(notNullArrayResult)
+          outputCV.notNullArray = notNullArrayResult
         }
-        rcv
+        outputCV
 
       case other => sys.error(s"Type $other does not support numeric operations")
     }
@@ -323,26 +304,25 @@ trait BatchExpression extends Expression {
       throw new TreeNodeException(this, s"Types do not match ${e1.dataType} != ${e2.dataType}")
     }
 
-    val evalE1 = e1.eval(rb)
-    val evalE2 = e2.eval(rb)
-    val inputType = evalE1.dt
+    val leftCV = e1.eval(rb)
+    val rightCV = e2.eval(rb)
+    val inputType = leftCV.dt
     val resultType = BooleanType
-    val width = evalE1.typeWidth
+    val width = leftCV.typeWidth
 
     inputType match {
       case nt: NativeType =>
         //function prepare
-        val memGetter = Memory.getValue(inputType).asInstanceOf[(Long) => nt.JvmType]
+        val leftGet = (leftCV.get _).asInstanceOf[(Int) => nt.JvmType]
+        val rightGet = (rightCV.get _).asInstanceOf[(Int) => nt.JvmType]
         val castedF = f.asInstanceOf[(Ordering[nt.JvmType], nt.JvmType, nt.JvmType) => Boolean]
 
         //prepare input & output memory
-        val memIn1 = evalE1.content
-        val memIn2 = evalE2.content
         val blOut = new BitSet(rb.rowNum)
 
         //prepare bitmap for calculation
-        val notNullArray1 = evalE1.notNullArray
-        val notNullArray2 = evalE2.notNullArray
+        val notNullArray1 = leftCV.notNullArray
+        val notNullArray2 = rightCV.notNullArray
         val notNullArrayResult = andWithNull(notNullArray1, notNullArray2, true)
         val selector = rb.curSelector
         val bitmap = andWithNull(notNullArrayResult, selector, false)
@@ -353,34 +333,31 @@ trait BatchExpression extends Expression {
           var i = 0
           while (iter.hasNext) {
             i = iter.next()
-            val cr = castedF(nt.ordering,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            blOut.set(i, cr)
+            blOut.set(i, castedF(nt.ordering,leftGet(i),rightGet(i)))
           }
         } else {
           val rowNum = rb.rowNum
           var i = 0
           while (i < rowNum) {
-            val cr = castedF(nt.ordering,
-              memGetter(memIn1.peer + i * width),
-              memGetter(memIn2.peer + i * width))
-            blOut.set(i, cr)
+            blOut.set(i, castedF(nt.ordering,leftGet(i),rightGet(i)))
             i += 1
           }
         }
 
         //free redundant memory
-        if(evalE1.isTemp) memIn1.free()
-        if(evalE2.isTemp) memIn2.free()
+        if(leftCV.isTemp && !leftCV.isInstanceOf[FakeColumnVector])
+          rb.returnMemory(width, leftCV.content.asInstanceOf[OffHeapMemory])
+        if(rightCV.isTemp && !rightCV.isInstanceOf[FakeColumnVector])
+          rb.returnMemory(width, rightCV.content.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val rcv = rb.getVector(resultType, true)
-        rcv.setContent(new BooleanMemory(blOut))
+
+        val outputMem = new BooleanMemory(blOut, rb.rowNum)
+        val outputCV = new BooleanColumnVector(outputMem, false)
         if (notNullArrayResult != null) {
-          rcv.setNullable(notNullArrayResult)
+          outputCV.notNullArray = notNullArrayResult
         }
-        rcv
+        outputCV
 
       case other => sys.error(s"Type $other does not support numeric operations")
     }
@@ -411,15 +388,17 @@ trait BatchExpression extends Expression {
       evalE1: ColumnVector, evalE2: ColumnVector, rb: RowBatch, typeWidth: Int) = {
     val memIn1 = evalE1.content
     val memIn2 = evalE2.content
-    val memOut = if (evalE1.isTemp) {
+    val memOut = if (evalE1.isTemp && !evalE1.isInstanceOf[FakeColumnVector]) {
       memIn1
-    } else if (evalE2.isTemp) {
+    } else if (evalE2.isTemp && !evalE2.isInstanceOf[FakeColumnVector]) {
       memIn2
     } else {
       rb.getTmpMemory(typeWidth)
     }
-    val memToFree = if(evalE1.isTemp && evalE2.isTemp) memIn2 else null
-    (memIn1, memIn2, memOut, memToFree)
+    val memToFree = if(evalE1.isTemp && evalE2.isTemp
+      && !evalE1.isInstanceOf[FakeColumnVector] && !evalE2.isInstanceOf[FakeColumnVector])
+      memIn2 else null
+    (memOut, memToFree)
   }
 }
 

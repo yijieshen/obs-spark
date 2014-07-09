@@ -8,14 +8,13 @@ class BatchProjection(expressions: Seq[Expression]) extends (RowBatch => RowBatc
 
   def apply(input: RowBatch): RowBatch = {
     val n2v = input.name2Vector
-    val n2l = input.name2Literal
 
     var i = 0
     while (i < exprArray.length) {
       val curExpr = exprArray(i)
       curExpr match {
-        case Alias(l @ Literal(_, _), name) =>
-          n2l(name) = l
+        case Alias(l @ BatchLiteral(_, _), name) =>
+          n2v(name) = l.v
         case Alias(be: BatchExpression, name) =>
           val ber = be.eval(input)
           n2v(name) = ber
