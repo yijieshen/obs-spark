@@ -177,14 +177,17 @@ class BooleanLiteral(val value: Boolean) extends FakeColumnVector {
 }
 
 object ColumnVector {
-  def getOffHeapCV(dt: DataType, content: OffHeapMemory, isTmp: Boolean) = {
+  def getNewCV(dt: DataType, content: Memory, isTmp: Boolean) = {
     dt match {
-      case DoubleType => new DoubleColumnVector(content, isTmp)
-      case LongType => new LongColumnVector(content, isTmp)
-      case IntegerType => new IntColumnVector(content, isTmp)
-      case FloatType => new FloatColumnVector(content, isTmp)
-      case ShortType => new ShortColumnVector(content, isTmp)
-      case ByteType => new ByteColumnVector(content, isTmp)
+      case DoubleType => new DoubleColumnVector(content.asInstanceOf[OffHeapMemory], isTmp)
+      case LongType => new LongColumnVector(content.asInstanceOf[OffHeapMemory], isTmp)
+      case IntegerType => new IntColumnVector(content.asInstanceOf[OffHeapMemory], isTmp)
+      case FloatType => new FloatColumnVector(content.asInstanceOf[OffHeapMemory], isTmp)
+      case ShortType => new ShortColumnVector(content.asInstanceOf[OffHeapMemory], isTmp)
+      case ByteType => new ByteColumnVector(content.asInstanceOf[OffHeapMemory], isTmp)
+      case StringType => new StringColumnVector(content.asInstanceOf[OnHeapMemory], isTmp)
+      case BinaryType => new BinaryColumnVector(content.asInstanceOf[OnHeapMemory], isTmp)
+      case BooleanType => new BooleanColumnVector(content.asInstanceOf[OnHeapMemory], isTmp)
     }
   }
 

@@ -34,7 +34,7 @@ trait BatchExpression extends Expression {
         //prepare output memory
         val memIn = childCV.content
         val memOut = if (childCV.isTemp) childCV.content else rb.getTmpMemory(width)
-        val outputCV = ColumnVector.getOffHeapCV(nt, memOut.asInstanceOf[OffHeapMemory], true)
+        val outputCV = ColumnVector.getNewCV(nt, memOut, true)
         val set = (outputCV.set _).asInstanceOf[(Int, nt.JvmType) => Unit]
 
         //prepare bitmap for calculation
@@ -101,7 +101,7 @@ trait BatchExpression extends Expression {
 
         //prepare output memory
         val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
-        val outputCV = ColumnVector.getOffHeapCV(nt, memOut.asInstanceOf[OffHeapMemory], true)
+        val outputCV = ColumnVector.getNewCV(nt, memOut, true)
         val set = (outputCV.set _).asInstanceOf[(Int, nt.JvmType) => Unit]
 
         //prepare bitmap for calculation
@@ -171,7 +171,7 @@ trait BatchExpression extends Expression {
 
         //prepare output vector
         val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
-        val outputCV = ColumnVector.getOffHeapCV(ft, memOut.asInstanceOf[OffHeapMemory], true)
+        val outputCV = ColumnVector.getNewCV(ft, memOut, true)
         val set = (outputCV.set _).asInstanceOf[(Int, ft.JvmType) => Unit]
 
 
@@ -242,7 +242,7 @@ trait BatchExpression extends Expression {
 
         //prepare input & output memory
         val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
-        val outputCV = ColumnVector.getOffHeapCV(it, memOut.asInstanceOf[OffHeapMemory], true)
+        val outputCV = ColumnVector.getNewCV(it, memOut, true)
         val set = (outputCV.set _).asInstanceOf[(Int, it.JvmType) => Unit]
 
         //prepare bitmap for calculation

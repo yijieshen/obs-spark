@@ -35,7 +35,7 @@ case object BatchRand extends LeafBatchExpression {
     //TODO: what's the right type of random output vector? currently it was set to Double
     val width = 8
     val tmpMem = input.getTmpMemory(width)
-    val outputCV = ColumnVector.getOffHeapCV(DoubleType, tmpMem.asInstanceOf[OffHeapMemory], true)
+    val outputCV = ColumnVector.getNewCV(DoubleType, tmpMem, true)
     val set = (outputCV.set _).asInstanceOf[(Int, Double) => Unit]
 
     val selector = input.curSelector

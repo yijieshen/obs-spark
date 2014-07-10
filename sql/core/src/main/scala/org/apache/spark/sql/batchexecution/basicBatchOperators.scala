@@ -1,8 +1,9 @@
 package org.apache.spark.sql.batchexecution
 
 import org.apache.spark.annotation.DeveloperApi
+import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.batchexpressions._
-import org.apache.spark.sql.catalyst.expressions.NamedExpression
+import org.apache.spark.sql.catalyst.expressions.{AttributeReference, Row, Attribute, NamedExpression}
 
 /**
  * :: DeveloperApi ::
@@ -31,6 +32,26 @@ case class BatchFilter(condition: BatchExpression, child: SparkBatchPlan) extend
       val selector = condition.eval(rowBatch).asInstanceOf[BooleanColumnVector].bitset
       rowBatch.curSelector = selector
       rowBatch
+    }
+  }
+}
+
+/**
+ * :: DeveloperApi ::
+ */
+@DeveloperApi
+case class ExistingRowBatchRdd(output: Seq[Attribute], rdd: RDD[Row], rowNum: Int)
+  extends LeafBatchNode {
+  override def execute(): RDD[RowBatch] = {
+    rdd.mapPartitions { iterator =>
+      val nextRowBatch = RowBatch.buildFromAttributes(output, rowNum)
+
+      new Iterator[RowBatch] {
+        override def next() = {
+
+        }
+        override def hasNext =
+      }
     }
   }
 }
