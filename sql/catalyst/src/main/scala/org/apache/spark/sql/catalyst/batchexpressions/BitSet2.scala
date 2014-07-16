@@ -26,6 +26,8 @@ class BitSet(val numBits: Int) extends Serializable {
   private val words = new Array[Long](bit2words(numBits))
   private val numWords = words.length
 
+  var availableBits: Int = numBits
+
   /**
    * Compute the capacity (number of bits) that can be represented
    * by this bitset.
@@ -188,7 +190,7 @@ class BitSet(val numBits: Int) extends Serializable {
    */
   def iterator = new Iterator[Int] {
     var ind = nextSetBit(0)
-    override def hasNext: Boolean = (ind >= 0 && ind < numBits)
+    override def hasNext: Boolean = (ind >= 0 && ind < availableBits)
     override def next() = {
       val tmp = ind
       ind  = nextSetBit(ind + 1)

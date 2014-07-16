@@ -45,6 +45,7 @@ trait BatchExpression extends Expression {
 
         //iteratively calculate
         if (bitmap != null) {
+          bitmap.availableBits = rb.curRowNum
           val iter = bitmap.iterator
           var i = 0
           while (iter.hasNext) {
@@ -52,7 +53,7 @@ trait BatchExpression extends Expression {
             set(i, castedF(nt.numeric, get(i)))
           }
         } else {
-          val rowNum = rb.rowNum
+          val rowNum = rb.curRowNum
           var i = 0
           while (i < rowNum) {
             set(i, castedF(nt.numeric, get(i)))
@@ -113,6 +114,7 @@ trait BatchExpression extends Expression {
 
         //iteratively calculate
         if (bitmap != null) {
+          bitmap.availableBits = rb.curRowNum
           val iter = bitmap.iterator
           var i = 0
           while (iter.hasNext) {
@@ -120,7 +122,7 @@ trait BatchExpression extends Expression {
             set(i, castedF(nt.numeric, leftGet(i), rightGet(i)))
           }
         } else {
-          val rowNum = rb.rowNum
+          val rowNum = rb.curRowNum
           var i = 0
           while (i < rowNum) {
             set(i, castedF(nt.numeric, leftGet(i), rightGet(i)))
@@ -184,6 +186,7 @@ trait BatchExpression extends Expression {
 
         //iteratively calculate
         if (bitmap != null) {
+          bitmap.availableBits = rb.curRowNum
           val iter = bitmap.iterator
           var i = 0
           while (iter.hasNext) {
@@ -191,7 +194,7 @@ trait BatchExpression extends Expression {
             set(i, castedF(ft.fractional, leftGet(i), rightGet(i)))
           }
         } else {
-          val rowNum = rb.rowNum
+          val rowNum = rb.curRowNum
           var i = 0
           while (i < rowNum) {
             set(i, castedF(ft.fractional, leftGet(i), rightGet(i)))
@@ -254,6 +257,7 @@ trait BatchExpression extends Expression {
 
         //iteratively calculate
         if (bitmap != null) {
+          bitmap.availableBits = rb.curRowNum
           val iter = bitmap.iterator
           var i = 0
           while (iter.hasNext) {
@@ -261,7 +265,7 @@ trait BatchExpression extends Expression {
             set(i, castedF(it.integral, leftGet(i), rightGet(i)))
           }
         } else {
-          val rowNum = rb.rowNum
+          val rowNum = rb.curRowNum
           var i = 0
           while (i < rowNum) {
             set(i, castedF(it.integral, leftGet(i), rightGet(i)))
@@ -318,7 +322,7 @@ trait BatchExpression extends Expression {
         val castedF = f.asInstanceOf[(Ordering[nt.JvmType], nt.JvmType, nt.JvmType) => Boolean]
 
         //prepare input & output memory
-        val blOut = new BitSet(rb.rowNum)
+        val blOut = new BitSet(rb.curRowNum)
 
         //prepare bitmap for calculation
         val notNullArray1 = leftCV.notNullArray
@@ -329,6 +333,7 @@ trait BatchExpression extends Expression {
 
         //iteratively calculate
         if (bitmap != null) {
+          bitmap.availableBits = rb.curRowNum
           val iter = bitmap.iterator
           var i = 0
           while (iter.hasNext) {
@@ -336,7 +341,7 @@ trait BatchExpression extends Expression {
             blOut.set(i, castedF(nt.ordering,leftGet(i),rightGet(i)))
           }
         } else {
-          val rowNum = rb.rowNum
+          val rowNum = rb.curRowNum
           var i = 0
           while (i < rowNum) {
             blOut.set(i, castedF(nt.ordering,leftGet(i),rightGet(i)))
@@ -352,7 +357,7 @@ trait BatchExpression extends Expression {
 
         //prepare result
 
-        val outputMem = new BooleanMemory(blOut, rb.rowNum)
+        val outputMem = new BooleanMemory(blOut, rb.curRowNum)
         val outputCV = new BooleanColumnVector(outputMem, false)
         if (notNullArrayResult != null) {
           outputCV.notNullArray = notNullArrayResult

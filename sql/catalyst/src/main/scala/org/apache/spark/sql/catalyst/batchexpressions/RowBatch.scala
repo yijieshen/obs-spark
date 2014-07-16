@@ -15,6 +15,8 @@ class RowBatch(val rowNum: Int) {
 
   val memPool = new OffHeapMemoryPool(rowNum)
 
+  var curRowNum: Int = _
+
   def getMemory(dt: DataType): Memory = {
     dt match {
       case LongType | DoubleType => getTmpMemory(8)
@@ -53,6 +55,15 @@ object RowBatch {
       rowBatch.name2Vector(ar.name) = cv
     }
     rowBatch
+  }
+
+  def getColumnVectors(attrs: Seq[Attribute], rowBatch: RowBatch): Array[ColumnVector] = {
+    val rst = new Array[ColumnVector](attrs.length)
+    attrs.zipWithIndex.foreach { case (attr, i) =>
+      val ar = attr.asInstanceOf[AttributeReference]
+      rst(i) = rowBatch.name2Vector.get(ar.name).get
+    }
+    rst
   }
 
 }

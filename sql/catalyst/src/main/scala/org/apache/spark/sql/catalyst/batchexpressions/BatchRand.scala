@@ -41,6 +41,7 @@ case object BatchRand extends LeafBatchExpression {
     val selector = input.curSelector
 
     if(selector != null) {
+      selector.availableBits = input.curRowNum
       val iter = selector.iterator
       var i = 0
       while (iter.hasNext) {
@@ -48,7 +49,7 @@ case object BatchRand extends LeafBatchExpression {
         set(i, rand.nextDouble())
       }
     } else {
-      val rowNum = input.rowNum
+      val rowNum = input.curRowNum
       var i = 0
       while (i < rowNum) {
         set(i, rand.nextDouble())

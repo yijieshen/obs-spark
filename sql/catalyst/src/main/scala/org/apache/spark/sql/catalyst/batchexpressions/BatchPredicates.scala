@@ -136,7 +136,7 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
         val leftGet = (leftCV.get _).asInstanceOf[(Int) => l.JvmType]
         val rightGet = (rightCV.get _).asInstanceOf[(Int) => r.JvmType]
 
-        val blOut = new BitSet(input.rowNum)
+        val blOut = new BitSet(input.curRowNum)
 
         //prepare bitmap for calculation
         val notNullArray1 = leftCV.notNullArray
@@ -147,6 +147,7 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
 
         //iteratively calculate
         if (bitmap != null) {
+          bitmap.availableBits = input.curRowNum
           val iter = bitmap.iterator
           var i = 0
           while (iter.hasNext) {
@@ -154,7 +155,7 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
             blOut.set(i, leftGet(i) == rightGet(i))
           }
         } else {
-          val rowNum = input.rowNum
+          val rowNum = input.curRowNum
           var i = 0
           while (i < rowNum) {
             blOut.set(i, leftGet(i) == rightGet(i))
@@ -169,7 +170,7 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
           input.returnMemory(rightCV.typeWidth, rightCV.content.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val outputMem = new BooleanMemory(blOut, input.rowNum)
+        val outputMem = new BooleanMemory(blOut, input.curRowNum)
         val outputCV = new BooleanColumnVector(outputMem, false)
         if (notNullArrayResult != null) {
           outputCV.notNullArray = notNullArrayResult
@@ -197,7 +198,7 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
           input.returnMemory(evalRight.typeWidth, evalRight.content.asInstanceOf[OffHeapMemory])
 
         //prepare result
-        val outputMem = new BooleanMemory(new BitSet(input.rowNum), input.rowNum)
+        val outputMem = new BooleanMemory(new BitSet(input.curRowNum), input.curRowNum)
         val outputCV = new BooleanColumnVector(outputMem, false)
         if (notNullArrayResult != null) {
           outputCV.notNullArray = notNullArrayResult

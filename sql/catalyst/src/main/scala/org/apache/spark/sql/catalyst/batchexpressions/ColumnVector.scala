@@ -18,6 +18,19 @@ abstract class ColumnVector(val isTemp: Boolean = false) {
   def get(i: Int): fieldType
   def set(i: Int, v: fieldType)
 
+  def set(i: Int, nullable: Any) = {
+    if(nullable == null) {
+      if(notNullArray == null) {
+        notNullArray = new BitSet(content.rowNum)
+      }
+      notNullArray.set(i)
+    } else {
+      set(i, nullable.asInstanceOf[fieldType])
+    }
+  }
+
+  def reinit = notNullArray = null
+
 }
 
 class DoubleColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
