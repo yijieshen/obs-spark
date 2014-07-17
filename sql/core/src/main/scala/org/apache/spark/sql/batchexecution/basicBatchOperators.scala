@@ -3,7 +3,7 @@ package org.apache.spark.sql.batchexecution
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.batchexpressions._
-import org.apache.spark.sql.catalyst.expressions.{GenericMutableRow, Attribute, NamedExpression, Row}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, GenericMutableRow, NamedExpression, Row}
 import org.apache.spark.sql.columnar.{ColumnAccessor, InMemoryRelation}
 
 /**
@@ -29,7 +29,7 @@ case class BatchFilter(condition: BatchExpression, child: SparkBatchPlan) extend
   override def output = child.output
 
   override def batchExecute() = child.batchExecute().mapPartitions { iter =>
-    iter.map{ rowBatch =>
+    iter.map { rowBatch =>
       val selector = condition.eval(rowBatch).asInstanceOf[BooleanColumnVector].bitset
       rowBatch.curSelector = selector
       rowBatch
@@ -63,7 +63,7 @@ case class ExistingRowBatchRdd(attributes: Seq[Attribute], rdd: RDD[Row], rowNum
             row = iterator.next()
             var i = 0
             while (i < row.length) {
-              cvs(i).set(rc, row(i))
+              cvs(i).setNullable(rc, row(i))
               i += 1
             }
             rc += 1
@@ -74,6 +74,9 @@ case class ExistingRowBatchRdd(attributes: Seq[Attribute], rdd: RDD[Row], rowNum
       }
     }
   }
+
+  override def execute() = rdd
+
 }
 
 /**
@@ -112,7 +115,7 @@ case class InMemoryColumnarBatchRdd(
             var i = 0
             while (i < nextRow.length) {
               columnAccessors(i).extractTo(nextRow, i)
-              cvs(i).set(rc, nextRow(i))
+              cvs(i).setNullable(rc, nextRow(i))
               i += 1
             }
             rc += 1
@@ -123,4 +126,37 @@ case class InMemoryColumnarBatchRdd(
       }
     }
   }
+
+  /**
+   * A copy of execute method from InMemoryColumnarTableScan
+   *
+   * @return
+   */
+  override def execute() = {
+    relation.cachedColumnBuffers.mapPartitions { iterator =>
+      val columnBuffers = iterator.next()
+      assert(!iterator.hasNext)
+
+      new Iterator[Row] {
+        // Find the ordinals of the requested columns.  If none are requested, use the first.
+        val requestedColumns =
+          if (attributes.isEmpty) Seq(0) else attributes.map(relation.output.indexOf(_))
+
+        val columnAccessors = requestedColumns.map(columnBuffers(_)).map(ColumnAccessor(_))
+        val nextRow = new GenericMutableRow(columnAccessors.length)
+
+        override def next() = {
+          var i = 0
+          while (i < nextRow.length) {
+            columnAccessors(i).extractTo(nextRow, i)
+            i += 1
+          }
+          nextRow
+        }
+
+        override def hasNext = columnAccessors.head.hasNext
+      }
+    }
+  }
+
 }

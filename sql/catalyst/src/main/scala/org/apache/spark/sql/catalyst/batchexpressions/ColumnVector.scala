@@ -1,5 +1,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
+import org.apache.spark.sql.catalyst.expressions.MutableRow
 import org.apache.spark.sql.catalyst.types._
 import Memory._
 
@@ -18,7 +19,7 @@ abstract class ColumnVector(val isTemp: Boolean = false) {
   def get(i: Int): fieldType
   def set(i: Int, v: fieldType)
 
-  def set(i: Int, nullable: Any) = {
+  def setNullable(i: Int, nullable: Any) = {
     if(nullable == null) {
       if(notNullArray == null) {
         notNullArray = new BitSet(content.rowNum)
@@ -31,6 +32,16 @@ abstract class ColumnVector(val isTemp: Boolean = false) {
 
   def reinit = notNullArray = null
 
+  def extractTo(row: MutableRow, ordinal: Int, index: Int) = {
+    if(notNullArray == null || notNullArray.get(index)) {
+      row.setNullAt(ordinal)
+    } else {
+      setField(row, ordinal, index)
+    }
+  }
+
+  def setField(row: MutableRow, ordinal: Int, index: Int)
+
 }
 
 class DoubleColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -40,6 +51,10 @@ class DoubleColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends Co
   lazy val peer = content.peer
   def get(i: Int) = unsafe.getDouble(peer + i * typeWidth)
   def set(i: Int, v: fieldType) = unsafe.putDouble(peer + i * typeWidth, v)
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setDouble(ordinal, get(index))
+  }
 }
 
 class LongColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -49,6 +64,10 @@ class LongColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends Colu
   lazy val peer = content.peer
   def get(i: Int) = unsafe.getLong(peer + i * typeWidth)
   def set(i: Int, v: fieldType) = unsafe.putLong(peer + i * typeWidth, v)
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setLong(ordinal, get(index))
+  }
 }
 
 class IntColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -58,6 +77,10 @@ class IntColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends Colum
   lazy val peer = content.peer
   def get(i: Int) = unsafe.getInt(peer + i * typeWidth)
   def set(i: Int, v: fieldType) = unsafe.putInt(peer + i * typeWidth, v)
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setInt(ordinal, get(index))
+  }
 }
 
 class FloatColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -67,6 +90,10 @@ class FloatColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends Col
   lazy val peer = content.peer
   def get(i: Int) = unsafe.getFloat(peer + i * typeWidth)
   def set(i: Int, v: fieldType) = unsafe.putFloat(peer + i * typeWidth, v)
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setFloat(ordinal, get(index))
+  }
 }
 
 class ShortColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -76,6 +103,10 @@ class ShortColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends Col
   lazy val peer = content.peer
   def get(i: Int) = unsafe.getShort(peer + i * typeWidth)
   def set(i: Int, v: fieldType) = unsafe.putShort(peer + i * typeWidth, v)
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setShort(ordinal, get(index))
+  }
 }
 
 class ByteColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -85,6 +116,10 @@ class ByteColumnVector(val content: OffHeapMemory, isTemp: Boolean) extends Colu
   val peer = content.peer
   def get(i: Int) = unsafe.getByte(peer + i * typeWidth)
   def set(i: Int, v: fieldType) = unsafe.putByte(peer + i * typeWidth, v)
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setByte(ordinal, get(index))
+  }
 }
 
 class StringColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -94,6 +129,10 @@ class StringColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends Col
   val strings = content.asInstanceOf[StringMemory].strings
   def get(i: Int) = strings(i)
   def set(i: Int, v: fieldType) = strings(i) = v
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setString(ordinal, get(index))
+  }
 }
 
 class BinaryColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -102,6 +141,10 @@ class BinaryColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends Col
   val typeWidth = 0
   def get(i: Int) = ???
   def set(i: Int, v: fieldType) = ???
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.update(ordinal, get(index))
+  }
 }
 
 class BooleanColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends ColumnVector(isTemp) {
@@ -111,6 +154,10 @@ class BooleanColumnVector(val content: OnHeapMemory, isTemp: Boolean) extends Co
   val bitset = content.asInstanceOf[BooleanMemory].bs
   def get(i: Int) = bitset.get(i)
   def set(i: Int, v: fieldType) = bitset.set(i, v)
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setBoolean(ordinal, get(index))
+  }
 }
 
 abstract class FakeColumnVector extends ColumnVector(false) {
@@ -123,6 +170,10 @@ class DoubleLiteral(val value: Double) extends FakeColumnVector {
   val typeWidth = 8
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Double cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setDouble(ordinal, value)
+  }
 }
 
 class LongLiteral(val value: Long) extends FakeColumnVector {
@@ -131,6 +182,10 @@ class LongLiteral(val value: Long) extends FakeColumnVector {
   val typeWidth = 8
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Long cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setLong(ordinal, value)
+  }
 }
 
 class IntLiteral(val value: Int) extends FakeColumnVector {
@@ -139,6 +194,10 @@ class IntLiteral(val value: Int) extends FakeColumnVector {
   val typeWidth = 4
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Int cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setInt(ordinal, value)
+  }
 }
 
 class FloatLiteral(val value: Float) extends FakeColumnVector {
@@ -147,6 +206,10 @@ class FloatLiteral(val value: Float) extends FakeColumnVector {
   val typeWidth = 4
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Float cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setFloat(ordinal, value)
+  }
 }
 
 class ShortLiteral(val value: Short) extends FakeColumnVector {
@@ -155,6 +218,10 @@ class ShortLiteral(val value: Short) extends FakeColumnVector {
   val typeWidth = 2
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Short cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setShort(ordinal, value)
+  }
 }
 
 class ByteLiteral(val value: Byte) extends FakeColumnVector {
@@ -163,6 +230,10 @@ class ByteLiteral(val value: Byte) extends FakeColumnVector {
   val typeWidth = 1
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Byte cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setByte(ordinal, value)
+  }
 }
 
 class StringLiteral(val value: String) extends FakeColumnVector {
@@ -171,6 +242,10 @@ class StringLiteral(val value: String) extends FakeColumnVector {
   val typeWidth = 0
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal String cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setString(ordinal, value)
+  }
 }
 
 class BinaryLiteral(val value: Array[Byte]) extends FakeColumnVector {
@@ -179,6 +254,10 @@ class BinaryLiteral(val value: Array[Byte]) extends FakeColumnVector {
   val typeWidth = 0
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Binary cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.update(ordinal, value)
+  }
 }
 
 class BooleanLiteral(val value: Boolean) extends FakeColumnVector {
@@ -187,6 +266,10 @@ class BooleanLiteral(val value: Boolean) extends FakeColumnVector {
   val typeWidth = 0
   def get(i: Int) = value
   def set(i: Int, v: fieldType) = sys.error(s"Literal Boolean cannot set")
+
+  override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
+    row.setBoolean(ordinal, value)
+  }
 }
 
 object ColumnVector {

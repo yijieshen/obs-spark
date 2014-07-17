@@ -1,6 +1,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
-import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference, Row}
+import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
 import org.apache.spark.sql.catalyst.types._
 
 import scala.collection.mutable.Map
@@ -40,8 +40,6 @@ class RowBatch(val rowNum: Int) {
     memPool.free()
   }
 
-  def expand: Array[Row] = ???
-
 }
 
 object RowBatch {
@@ -61,7 +59,7 @@ object RowBatch {
     val rst = new Array[ColumnVector](attrs.length)
     attrs.zipWithIndex.foreach { case (attr, i) =>
       val ar = attr.asInstanceOf[AttributeReference]
-      rst(i) = rowBatch.name2Vector.get(ar.name).get
+      rst(i) = rowBatch.name2Vector(ar.name)
     }
     rst
   }

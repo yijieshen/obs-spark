@@ -3,23 +3,68 @@ package org.apache.spark.sql.batchexecution
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.batchexpressions.RowBatch
+import org.apache.spark.sql.catalyst.batchexpressions.{ColumnVector, RowBatch}
+import org.apache.spark.sql.catalyst.expressions.GenericMutableRow
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{BinaryNode, LeafNode, SparkPlan, UnaryNode}
 
 @DeveloperApi
-trait SparkBatchPlan extends SparkPlan{
+trait SparkBatchPlan extends SparkPlan {
   self: Product =>
 
-  override def execute(): RDD[Row] =
-    sys.error(s"SparkPlan: $this should use batchExecute() instead")
+  def execute(): RDD[Row] = batchExecute().mapPartitions { batchIter =>
+
+    new Iterator[Row] {
+      var nextRowBatch: RowBatch = null
+      var nextCVs: Array[ColumnVector] = null
+      var rowCountInRB = 0
+      var curRowNumInRB = 0
+
+      def getNextRowBatch(): Boolean = {
+        curRowNumInRB = 0
+        if(batchIter.hasNext) {
+          nextRowBatch = batchIter.next()
+          rowCountInRB = nextRowBatch.curRowNum
+          nextCVs = RowBatch.getColumnVectors(output, nextRowBatch)
+          true
+        } else {
+          nextRowBatch = null
+          rowCountInRB = 0
+          nextCVs = null
+          false
+        }
+      }
+
+      override def hasNext: Boolean = {
+        if(nextRowBatch == null) {
+          getNextRowBatch
+        } else if(curRowNumInRB < rowCountInRB) {
+          true
+        } else if(curRowNumInRB == rowCountInRB) {
+          getNextRowBatch
+        } else {
+          false
+        }
+      }
+
+      val outSize = output.size
+      val nextRow = new GenericMutableRow(outSize)
+
+      override def next(): Row = {
+        var i = 0
+        while (i < outSize) {
+          nextCVs(i).extractTo(nextRow, i, curRowNumInRB)
+          i += 1
+        }
+        curRowNumInRB += 1
+        nextRow
+      }
+    }
+  }
 
   def batchExecute(): RDD[RowBatch]
 
-  /**
-   * Runs this query returning the result as an array.
-   */
-  override def executeCollect(): Array[Row] = batchExecute().map(_.expand).collect().flatten
+  override def executeCollect(): Array[Row] = execute().map(_.copy).collect()
 }
 
 private[sql] trait LeafBatchNode extends SparkBatchPlan with LeafNode {

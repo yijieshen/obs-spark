@@ -55,7 +55,7 @@ abstract class BinaryArithmetic extends BinaryExpression {
 case class Add(left: Expression, right: Expression) extends BinaryArithmetic {
   def symbol = "+"
 
-  override def eval(input: Row): Any = n2(input, left, right, (numeric, x, y) => numeric.plus(x, y))
+  override def eval(input: Row): Any = n2(input, left, right, _.plus(_, _))
 }
 
 case class Subtract(left: Expression, right: Expression) extends BinaryArithmetic {
