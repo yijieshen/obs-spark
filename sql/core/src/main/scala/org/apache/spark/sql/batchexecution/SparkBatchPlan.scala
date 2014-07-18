@@ -3,7 +3,7 @@ package org.apache.spark.sql.batchexecution
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.batchexpressions.{ColumnVector, RowBatch}
+import org.apache.spark.sql.catalyst.batchexpressions.{BitSet, ColumnVector, RowBatch}
 import org.apache.spark.sql.catalyst.expressions.{MutableRow, GenericMutableRow}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{BinaryNode, LeafNode, SparkPlan, UnaryNode}
@@ -17,8 +17,10 @@ trait SparkBatchPlan extends SparkPlan {
     new Iterator[Row] {
       var nextRowBatch: RowBatch = null
       var nextCVs: Array[ColumnVector] = null
+      var nextSelectors: BitSet = null
       var rowCountInRB = 0
       var curRowNumInRB = 0
+      var curIterator: Iterator[Int] = null
 
       def getNextRowBatch(): Boolean = {
         curRowNumInRB = 0
@@ -26,11 +28,15 @@ trait SparkBatchPlan extends SparkPlan {
           nextRowBatch = batchIter.next()
           rowCountInRB = nextRowBatch.curRowNum
           nextCVs = RowBatch.getColumnVectors(output, nextRowBatch)
+          nextSelectors = nextRowBatch.curSelector
+          if(nextSelectors != null) curIterator = nextSelectors.iterator
           true
         } else {
           nextRowBatch = null
           rowCountInRB = 0
           nextCVs = null
+          nextSelectors = null
+          curIterator = null
           false
         }
       }
@@ -43,46 +49,38 @@ trait SparkBatchPlan extends SparkPlan {
         }
       }
 
-      override def hasNext: Boolean = {
-        //initialize
-        if(nextRowBatch == null) {
-          val hasNextRB = getNextRowBatch
-          if(!hasNextRB) return false
-        }
-
-        while(nextRowBatch != null) {
-          val curSelector = nextRowBatch.curSelector
-          if(curSelector != null) 
-        }
-        false
-      }
-
-
-
       val outSize = output.size
       val nextRow = new GenericMutableRow(outSize)
 
       override def next(): Row = nextRow
-      //      override def next(): Row = {
-      //        var i = 0
-      //        while (i < outSize) {
-      //          nextCVs(i).extractTo(nextRow, i, curRowNumInRB)
-      //          i += 1
-      //        }
-      //        curRowNumInRB += 1
-      //        nextRow
-      //      }
-      //      override def hasNext: Boolean = {
-      //        if(nextRowBatch == null) {
-      //          getNextRowBatch
-      //        } else if(curRowNumInRB < rowCountInRB) {
-      //          true
-      //        } else if(curRowNumInRB == rowCountInRB) {
-      //          getNextRowBatch
-      //        } else {
-      //          false
-      //        }
-      //      }
+
+      override def hasNext: Boolean = {
+        //initialize
+        if(nextRowBatch == null) {
+          getNextRowBatch
+        }
+
+        while(nextRowBatch != null) {
+          if(nextSelectors != null) {
+            if(curIterator.hasNext) {
+              curRowNumInRB = curIterator.next()
+              extractRow(nextRow, curRowNumInRB)
+              return true
+            } else {
+              getNextRowBatch
+            }
+          } else {
+            if(curRowNumInRB < rowCountInRB) {
+              extractRow(nextRow, curRowNumInRB)
+              curRowNumInRB += 1
+              return true
+            } else {
+              getNextRowBatch
+            }
+          }
+        }
+        return false
+      }
     }
   }
 
