@@ -4,7 +4,7 @@ import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql._
 import org.apache.spark.sql.catalyst.batchexpressions.{ColumnVector, RowBatch}
-import org.apache.spark.sql.catalyst.expressions.GenericMutableRow
+import org.apache.spark.sql.catalyst.expressions.{MutableRow, GenericMutableRow}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{BinaryNode, LeafNode, SparkPlan, UnaryNode}
 
@@ -35,30 +35,54 @@ trait SparkBatchPlan extends SparkPlan {
         }
       }
 
-      override def hasNext: Boolean = {
-        if(nextRowBatch == null) {
-          getNextRowBatch
-        } else if(curRowNumInRB < rowCountInRB) {
-          true
-        } else if(curRowNumInRB == rowCountInRB) {
-          getNextRowBatch
-        } else {
-          false
+      def extractRow(nextRow: MutableRow, curRowNum: Int): Unit ={
+        var i = 0
+        while (i < outSize) {
+          nextCVs(i).extractTo(nextRow, i, curRowNum)
+          i += 1
         }
       }
+
+      override def hasNext: Boolean = {
+        //initialize
+        if(nextRowBatch == null) {
+          val hasNextRB = getNextRowBatch
+          if(!hasNextRB) return false
+        }
+
+        while(nextRowBatch != null) {
+          val curSelector = nextRowBatch.curSelector
+          if(curSelector != null) 
+        }
+        false
+      }
+
+
 
       val outSize = output.size
       val nextRow = new GenericMutableRow(outSize)
 
-      override def next(): Row = {
-        var i = 0
-        while (i < outSize) {
-          nextCVs(i).extractTo(nextRow, i, curRowNumInRB)
-          i += 1
-        }
-        curRowNumInRB += 1
-        nextRow
-      }
+      override def next(): Row = nextRow
+      //      override def next(): Row = {
+      //        var i = 0
+      //        while (i < outSize) {
+      //          nextCVs(i).extractTo(nextRow, i, curRowNumInRB)
+      //          i += 1
+      //        }
+      //        curRowNumInRB += 1
+      //        nextRow
+      //      }
+      //      override def hasNext: Boolean = {
+      //        if(nextRowBatch == null) {
+      //          getNextRowBatch
+      //        } else if(curRowNumInRB < rowCountInRB) {
+      //          true
+      //        } else if(curRowNumInRB == rowCountInRB) {
+      //          getNextRowBatch
+      //        } else {
+      //          false
+      //        }
+      //      }
     }
   }
 

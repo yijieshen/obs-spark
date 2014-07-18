@@ -18,6 +18,7 @@ case class BatchBoundReference(ordinal: Int, baseReference: Attribute)
   override def name: String = baseReference.name
   override def nullable: Boolean = baseReference.nullable
   override def dataType: DataType = baseReference.dataType
+  override def toString = s"$baseReference:$ordinal"
 
   override def eval(input: RowBatch): ColumnVector = input.name2Vector(name)
 }

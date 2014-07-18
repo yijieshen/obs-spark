@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql
 
+import org.apache.spark.sql.batchexecution.{ToBatchPlan, ToBatchExpr}
+
 import scala.language.implicitConversions
 import scala.reflect.runtime.universe.TypeTag
 
@@ -296,6 +298,16 @@ class SQLContext(@transient val sparkContext: SparkContext)
       Batch("Prepare Expressions", Once, new BindReferences[SparkPlan]) :: Nil
   }
 
+  @transient protected val rowNumInBatch = get("batchexecution.batch.size", "1000").toInt
+  @transient protected val batchExecution = get("batchexecution.plan.convert", "true").toBoolean
+
+  @transient
+  protected[sql] val toBatchPlan = new RuleExecutor[SparkPlan] {
+    val batches =
+      Batch("Expression transform", Once, ToBatchExpr(self)) ::
+      Batch("Operator transform", Once, ToBatchPlan(self, rowNumInBatch)) :: Nil
+  }
+
   /**
    * The primary workflow for executing relational queries using Spark.  Designed to allow easy
    * access to the intermediate phases of query execution for developers.
@@ -309,7 +321,9 @@ class SQLContext(@transient val sparkContext: SparkContext)
     lazy val sparkPlan = planner(optimizedPlan).next()
     // executedPlan should not be used to initialize any SparkPlan. It should be
     // only used for execution.
-    lazy val executedPlan: SparkPlan = prepareForExecution(sparkPlan)
+    lazy val nonBatchPlan: SparkPlan = prepareForExecution(sparkPlan)
+    lazy val executedPlan: SparkPlan =
+      if(batchExecution) toBatchPlan(nonBatchPlan) else nonBatchPlan
 
     /** Internal version of the RDD. Avoids copies and has no schema */
     lazy val toRdd: RDD[Row] = executedPlan.execute()

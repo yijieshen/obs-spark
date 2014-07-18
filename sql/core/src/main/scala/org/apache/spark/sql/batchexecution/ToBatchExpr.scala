@@ -7,7 +7,7 @@ import org.apache.spark.sql.execution.SparkPlan
 import org.apache.spark.sql.catalyst.batchexpressions.{BatchExpression => BE}
 import org.apache.spark.sql.catalyst.batchexpressions._
 
-private[sql] case class ToBatchExpr(sqlContext: SQLContext, rowNumInBatch: Int)
+private[sql] case class ToBatchExpr(sqlContext: SQLContext)
   extends Rule[SparkPlan] {
 
   def apply(plan: SparkPlan): SparkPlan = plan.transform {
@@ -19,6 +19,8 @@ private[sql] case class ToBatchExpr(sqlContext: SQLContext, rowNumInBatch: Int)
           BatchRand
         case BoundReference(ordinal, baseReference) =>
           BatchBoundReference(ordinal, baseReference)
+        case a @ Alias(child: BE, name) =>
+          BatchAlias(child, name)(a.exprId, a.qualifiers)
 
         //Arithmatic exprs
         case UnaryMinus(child: BE) =>

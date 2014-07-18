@@ -381,7 +381,7 @@ trait BatchExpression extends Expression {
       bs1 & bs2
     } else if (bs1 != null && bs2 == null) {
       if(cp) bs1.copy else bs1
-    } else if (bs1 != null && bs2 == null) {
+    } else if (bs2 != null && bs1 == null) {
       if(cp) bs2.copy else bs2
     } else {
       null

@@ -22,9 +22,9 @@ abstract class ColumnVector(val isTemp: Boolean = false) {
   def setNullable(i: Int, nullable: Any) = {
     if(nullable == null) {
       if(notNullArray == null) {
-        notNullArray = new BitSet(content.rowNum)
+        notNullArray = (new BitSet(content.rowNum)).complement
       }
-      notNullArray.set(i)
+      notNullArray.set(i, false)
     } else {
       set(i, nullable.asInstanceOf[fieldType])
     }
@@ -33,7 +33,7 @@ abstract class ColumnVector(val isTemp: Boolean = false) {
   def reinit = notNullArray = null
 
   def extractTo(row: MutableRow, ordinal: Int, index: Int) = {
-    if(notNullArray == null || notNullArray.get(index)) {
+    if(notNullArray != null && !notNullArray.get(index)) {
       row.setNullAt(ordinal)
     } else {
       setField(row, ordinal, index)
@@ -164,7 +164,7 @@ abstract class FakeColumnVector extends ColumnVector(false) {
   val content = NullMemory
 }
 
-class DoubleLiteral(val value: Double) extends FakeColumnVector {
+case class DoubleLiteral(value: Double) extends FakeColumnVector {
   type fieldType = DoubleType.JvmType
   val dt = DoubleType
   val typeWidth = 8
@@ -176,7 +176,7 @@ class DoubleLiteral(val value: Double) extends FakeColumnVector {
   }
 }
 
-class LongLiteral(val value: Long) extends FakeColumnVector {
+case class LongLiteral(val value: Long) extends FakeColumnVector {
   type fieldType = LongType.JvmType
   val dt = LongType
   val typeWidth = 8
@@ -188,7 +188,7 @@ class LongLiteral(val value: Long) extends FakeColumnVector {
   }
 }
 
-class IntLiteral(val value: Int) extends FakeColumnVector {
+case class IntLiteral(val value: Int) extends FakeColumnVector {
   type fieldType = IntegerType.JvmType
   val dt = IntegerType
   val typeWidth = 4
@@ -200,7 +200,7 @@ class IntLiteral(val value: Int) extends FakeColumnVector {
   }
 }
 
-class FloatLiteral(val value: Float) extends FakeColumnVector {
+case class FloatLiteral(val value: Float) extends FakeColumnVector {
   type fieldType = FloatType.JvmType
   val dt = FloatType
   val typeWidth = 4
@@ -212,7 +212,7 @@ class FloatLiteral(val value: Float) extends FakeColumnVector {
   }
 }
 
-class ShortLiteral(val value: Short) extends FakeColumnVector {
+case class ShortLiteral(val value: Short) extends FakeColumnVector {
   type fieldType = ShortType.JvmType
   val dt = ShortType
   val typeWidth = 2
@@ -224,7 +224,7 @@ class ShortLiteral(val value: Short) extends FakeColumnVector {
   }
 }
 
-class ByteLiteral(val value: Byte) extends FakeColumnVector {
+case class ByteLiteral(val value: Byte) extends FakeColumnVector {
   type fieldType = ByteType.JvmType
   val dt = ByteType
   val typeWidth = 1
@@ -236,7 +236,7 @@ class ByteLiteral(val value: Byte) extends FakeColumnVector {
   }
 }
 
-class StringLiteral(val value: String) extends FakeColumnVector {
+case class StringLiteral(val value: String) extends FakeColumnVector {
   type fieldType = String
   val dt = StringType
   val typeWidth = 0
@@ -248,7 +248,7 @@ class StringLiteral(val value: String) extends FakeColumnVector {
   }
 }
 
-class BinaryLiteral(val value: Array[Byte]) extends FakeColumnVector {
+case class BinaryLiteral(val value: Array[Byte]) extends FakeColumnVector {
   type fieldType = Array[Byte]
   val dt = BinaryType
   val typeWidth = 0
@@ -260,7 +260,7 @@ class BinaryLiteral(val value: Array[Byte]) extends FakeColumnVector {
   }
 }
 
-class BooleanLiteral(val value: Boolean) extends FakeColumnVector {
+case class BooleanLiteral(val value: Boolean) extends FakeColumnVector {
   type fieldType = Boolean
   val dt = BooleanType
   val typeWidth = 0

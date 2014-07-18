@@ -57,9 +57,11 @@ object RowBatch {
 
   def getColumnVectors(attrs: Seq[Attribute], rowBatch: RowBatch): Array[ColumnVector] = {
     val rst = new Array[ColumnVector](attrs.length)
-    attrs.zipWithIndex.foreach { case (attr, i) =>
-      val ar = attr.asInstanceOf[AttributeReference]
-      rst(i) = rowBatch.name2Vector(ar.name)
+    attrs.zipWithIndex.foreach {
+      case (attr: AttributeReference, i) =>
+        rst(i) = rowBatch.name2Vector(attr.name)
+      case (bbr: BatchBoundReference, i) =>
+        rst(i) = rowBatch.name2Vector(bbr.name)
     }
     rst
   }

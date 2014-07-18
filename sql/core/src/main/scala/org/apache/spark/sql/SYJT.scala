@@ -11,8 +11,8 @@ object SYJT {
   t1.registerAsTable("t1")
 
   def main(args: Array[String]) {
-    val srdd = sql("SELECT b+c, a+1, key, 1+1 FROM t1")
-    srdd.collect()
+    val srdd = sql("SELECT a+c, b+700, key, 3 FROM t1 WHERE a > 150")
+    srdd.collect().foreach(println)
     println(
       s"""
          |== Logical Plan ==
@@ -20,6 +20,8 @@ object SYJT {
          |== Analyzed Plan ==
          |${srdd.queryExecution.analyzed}
          |== Physical Plan ==
+         |${srdd.queryExecution.nonBatchPlan}
+         |== Batch Plan ==
          |${srdd.queryExecution.executedPlan}
        """.stripMargin)
   }
