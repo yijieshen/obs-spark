@@ -30,7 +30,7 @@ case class BatchFilter(condition: BatchExpression, child: SparkBatchPlan) extend
 
   override def batchExecute() = child.batchExecute().mapPartitions { iter =>
     iter.map { rowBatch =>
-      val selector = condition.eval(rowBatch).asInstanceOf[BooleanColumnVector].bitset
+      val selector = condition.eval(rowBatch).asInstanceOf[BooleanColumnVector].bs
       rowBatch.curSelector = selector
       rowBatch
     }

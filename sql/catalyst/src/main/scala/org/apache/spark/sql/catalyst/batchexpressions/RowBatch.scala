@@ -1,7 +1,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions
 
 import org.apache.spark.sql.catalyst.expressions.{Attribute, AttributeReference}
-import org.apache.spark.sql.catalyst.types._
 
 import scala.collection.mutable.Map
 
@@ -13,33 +12,7 @@ class RowBatch(val rowNum: Int) {
   // selector for the current rowbatch
   var curSelector: BitSet = null
 
-  val memPool = new OffHeapMemoryPool(rowNum)
-
   var curRowNum: Int = _
-
-  def getMemory(dt: DataType): Memory = {
-    dt match {
-      case LongType | DoubleType => getTmpMemory(8)
-      case IntegerType | FloatType => getTmpMemory(4)
-      case ShortType => getTmpMemory(2)
-      case ByteType => getTmpMemory(1)
-      case StringType => new StringMemory(new Array[String](rowNum), rowNum)
-      case BooleanType => new BooleanMemory(new BitSet(rowNum), rowNum)
-      case BinaryType => NullMemory
-    }
-  }
-
-  def getTmpMemory(width: Int): OffHeapMemory =
-    memPool.borrowMemory(width)
-
-  def returnMemory(width: Int, mem: OffHeapMemory) =
-    memPool.returnMemory(width, mem)
-
-  def free() = {
-    name2Vector.values.foreach(_.content.free())
-    memPool.free()
-  }
-
 }
 
 object RowBatch {
@@ -48,8 +21,7 @@ object RowBatch {
     val rowBatch = new RowBatch(rowNum)
     attrs.foreach { attr =>
       val ar = attr.asInstanceOf[AttributeReference]
-      val mem = rowBatch.getMemory(ar.dataType)
-      val cv = ColumnVector.getNewCV(ar.dataType, mem, false)
+      val cv = ColumnVector(ar.dataType, rowNum)
       rowBatch.name2Vector(ar.name) = cv
     }
     rowBatch

@@ -23,24 +23,18 @@ trait BatchExpression extends Expression {
   def n1b(e: BatchExpression, rb: RowBatch, f: ((Numeric[Any], Any) => Any)): ColumnVector = {
     val resultType = e.dataType
     val childCV = e.eval(rb)
-    val width = childCV.typeWidth
 
     resultType match {
       case nt: NumericType =>
         //prepare function
         val get = (childCV.get _).asInstanceOf[(Int) => nt.JvmType]
         val castedF = f.asInstanceOf[(Numeric[nt.JvmType], nt.JvmType) => nt.JvmType]
-
-        //prepare output memory
-        val memIn = childCV.content
-        val memOut = if (childCV.isTemp) childCV.content else rb.getTmpMemory(width)
-        val outputCV = ColumnVector.getNewCV(nt, memOut, true)
+        val outputCV = ColumnVector(nt, rb.curRowNum)
         val set = (outputCV.set _).asInstanceOf[(Int, nt.JvmType) => Unit]
 
         //prepare bitmap for calculation
         val selector = rb.curSelector
         val notNullArray = childCV.notNullArray
-
         val bitmap = andWithNull(selector, notNullArray, false)
 
         //iteratively calculate
@@ -60,8 +54,6 @@ trait BatchExpression extends Expression {
             i += 1
           }
         }
-
-        //free redundant memory
 
         //prepare result
         if (notNullArray != null) {
@@ -91,7 +83,6 @@ trait BatchExpression extends Expression {
     val leftCV = e1.eval(rb)
     val rightCV = e2.eval(rb)
     val resultType = e1.dataType
-    val width = leftCV.typeWidth
 
     resultType match {
       case nt: NumericType =>
@@ -99,10 +90,7 @@ trait BatchExpression extends Expression {
         val leftGet = (leftCV.get _).asInstanceOf[(Int) => nt.JvmType]
         val rightGet = (rightCV.get _).asInstanceOf[(Int) => nt.JvmType]
         val castedF = f.asInstanceOf[(Numeric[nt.JvmType], nt.JvmType, nt.JvmType) => nt.JvmType]
-
-        //prepare output memory
-        val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
-        val outputCV = ColumnVector.getNewCV(nt, memOut, true)
+        val outputCV = ColumnVector(nt, rb.curRowNum)
         val set = (outputCV.set _).asInstanceOf[(Int, nt.JvmType) => Unit]
 
         //prepare bitmap for calculation
@@ -129,9 +117,6 @@ trait BatchExpression extends Expression {
             i += 1
           }
         }
-
-        //free redundant memory
-        if(memToFree != null) rb.returnMemory(width, memToFree.asInstanceOf[OffHeapMemory])
 
         //prepare result
         if (notNullArrayResult != null) {
@@ -162,7 +147,6 @@ trait BatchExpression extends Expression {
     val leftCV = e1.eval(rb)
     val rightCV = e2.eval(rb)
     val resultType = e1.dataType
-    val width = leftCV.typeWidth
 
     resultType match {
       case ft: FractionalType =>
@@ -170,12 +154,8 @@ trait BatchExpression extends Expression {
         val leftGet = (leftCV.get _).asInstanceOf[(Int) => ft.JvmType]
         val rightGet = (rightCV.get _).asInstanceOf[(Int) => ft.JvmType]
         val castedF = f.asInstanceOf[(Fractional[ft.JvmType], ft.JvmType, ft.JvmType) => ft.JvmType]
-
-        //prepare output vector
-        val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
-        val outputCV = ColumnVector.getNewCV(ft, memOut, true)
+        val outputCV = ColumnVector(ft, rb.curRowNum)
         val set = (outputCV.set _).asInstanceOf[(Int, ft.JvmType) => Unit]
-
 
         //prepare bitmap for calculation
         val notNullArray1 = leftCV.notNullArray
@@ -201,9 +181,6 @@ trait BatchExpression extends Expression {
             i += 1
           }
         }
-
-        //free redundant memory
-        if(memToFree != null) rb.returnMemory(width, memToFree.asInstanceOf[OffHeapMemory])
 
         //prepare result
         if (notNullArrayResult != null) {
@@ -234,7 +211,6 @@ trait BatchExpression extends Expression {
     val leftCV = e1.eval(rb)
     val rightCV = e2.eval(rb)
     val resultType = e1.dataType
-    val width = leftCV.typeWidth
 
     resultType match {
       case it: IntegralType =>
@@ -242,10 +218,7 @@ trait BatchExpression extends Expression {
         val leftGet = (leftCV.get _).asInstanceOf[(Int) => it.JvmType]
         val rightGet = (rightCV.get _).asInstanceOf[(Int) => it.JvmType]
         val castedF = f.asInstanceOf[(Integral[it.JvmType], it.JvmType, it.JvmType) => it.JvmType]
-
-        //prepare input & output memory
-        val (memOut, memToFree) = memoryPrepare(leftCV, rightCV, rb, width)
-        val outputCV = ColumnVector.getNewCV(it, memOut, true)
+        val outputCV = ColumnVector(it, rb.curRowNum)
         val set = (outputCV.set _).asInstanceOf[(Int, it.JvmType) => Unit]
 
         //prepare bitmap for calculation
@@ -272,10 +245,6 @@ trait BatchExpression extends Expression {
             i += 1
           }
         }
-
-        //free redundant memory
-        if(memToFree != null)
-          rb.returnMemory(width, memToFree.asInstanceOf[OffHeapMemory])
 
         //prepare result
         if (notNullArrayResult != null) {
@@ -310,9 +279,7 @@ trait BatchExpression extends Expression {
 
     val leftCV = e1.eval(rb)
     val rightCV = e2.eval(rb)
-    val inputType = leftCV.dt
-    val resultType = BooleanType
-    val width = leftCV.typeWidth
+    val inputType = e1.dataType
 
     inputType match {
       case nt: NativeType =>
@@ -349,16 +316,8 @@ trait BatchExpression extends Expression {
           }
         }
 
-        //free redundant memory
-        if(leftCV.isTemp && !leftCV.isInstanceOf[FakeColumnVector])
-          rb.returnMemory(width, leftCV.content.asInstanceOf[OffHeapMemory])
-        if(rightCV.isTemp && !rightCV.isInstanceOf[FakeColumnVector])
-          rb.returnMemory(width, rightCV.content.asInstanceOf[OffHeapMemory])
-
         //prepare result
-
-        val outputMem = new BooleanMemory(blOut, rb.curRowNum)
-        val outputCV = new BooleanColumnVector(outputMem, false)
+        val outputCV = new BooleanColumnVector(rb.rowNum, blOut)
         if (notNullArrayResult != null) {
           outputCV.notNullArray = notNullArrayResult
         }
@@ -386,24 +345,6 @@ trait BatchExpression extends Expression {
     } else {
       null
     }
-  }
-
-  @inline
-  protected final def memoryPrepare(
-      evalE1: ColumnVector, evalE2: ColumnVector, rb: RowBatch, typeWidth: Int) = {
-    val memIn1 = evalE1.content
-    val memIn2 = evalE2.content
-    val memOut = if (evalE1.isTemp && !evalE1.isInstanceOf[FakeColumnVector]) {
-      memIn1
-    } else if (evalE2.isTemp && !evalE2.isInstanceOf[FakeColumnVector]) {
-      memIn2
-    } else {
-      rb.getTmpMemory(typeWidth)
-    }
-    val memToFree = if(evalE1.isTemp && evalE2.isTemp
-      && !evalE1.isInstanceOf[FakeColumnVector] && !evalE2.isInstanceOf[FakeColumnVector])
-      memIn2 else null
-    (memOut, memToFree)
   }
 }
 
