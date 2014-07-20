@@ -15,22 +15,20 @@
  * limitations under the License.
  */
 
-package org.apache.spark.ui.jobs
+package org.apache.spark.ui
 
-import org.apache.spark.annotation.DeveloperApi
+private[spark] object ToolTips {
+  val SCHEDULER_DELAY =
+    """Scheduler delay includes time to ship the task from the scheduler to
+       the executor, and time the time to send a message from the executor to the scheduler stating
+       that the task has completed. When the scheduler becomes overloaded, task completion messages
+       become queued up, and scheduler delay increases."""
 
-/**
- * :: DeveloperApi ::
- * Class for reporting aggregated metrics for each executor in stage UI.
- */
-@DeveloperApi
-class ExecutorSummary {
-  var taskTime : Long = 0
-  var failedTasks : Int = 0
-  var succeededTasks : Int = 0
-  var inputBytes: Long = 0
-  var shuffleRead : Long = 0
-  var shuffleWrite : Long = 0
-  var memoryBytesSpilled : Long = 0
-  var diskBytesSpilled : Long = 0
+  val INPUT = "Bytes read from Hadoop or from Spark storage."
+
+  val SHUFFLE_WRITE = "Bytes written to disk in order to be read by a shuffle in a future stage."
+
+  val SHUFFLE_READ =
+    """Bytes read from remote executors. Typically less than shuffle write bytes
+       because this does not include shuffle data read locally."""
 }
