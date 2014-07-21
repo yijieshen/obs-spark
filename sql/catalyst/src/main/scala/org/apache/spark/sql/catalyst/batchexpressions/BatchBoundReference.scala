@@ -9,6 +9,8 @@ case class BatchBoundReference(ordinal: Int, baseReference: Attribute)
 
   override def withQualifiers(newQualifiers: Seq[String]): Attribute =
     BatchBoundReference(ordinal, baseReference.withQualifiers(newQualifiers))
+  override def withNullability(newNullability: Boolean): Attribute =
+    BatchBoundReference(ordinal, baseReference.withNullability(newNullability))
   override def newInstance: Attribute =
     BatchBoundReference(ordinal, baseReference.newInstance)
 
@@ -21,4 +23,6 @@ case class BatchBoundReference(ordinal: Int, baseReference: Attribute)
   override def toString = s"$baseReference:$ordinal"
 
   override def eval(input: RowBatch): ColumnVector = input.name2Vector(name)
+
+
 }

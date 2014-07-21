@@ -45,7 +45,7 @@ private[sql] case class ToBatchExpr(sqlContext: SQLContext)
           BatchOr(left, right)
 
         //Predicate exprs
-        case Equals(left: BE, right: BE) =>
+        case EqualTo(left: BE, right: BE) =>
           BatchEquals(left, right)
         case LessThan(left: BE, right: BE) =>
           BatchLessThan(left, right)
