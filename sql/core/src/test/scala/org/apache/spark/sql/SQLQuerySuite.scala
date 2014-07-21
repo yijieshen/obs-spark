@@ -17,7 +17,9 @@
 
 package org.apache.spark.sql
 
+import org.apache.spark.sql.catalyst.analysis.EliminateAnalysisOperators
 import org.apache.spark.sql.catalyst.expressions._
+import org.apache.spark.sql.columnar.{InMemoryColumnarTableScan, InMemoryRelation}
 import org.apache.spark.sql.test._
 
 /* Implicits */
@@ -32,6 +34,21 @@ class SQLQuerySuite extends QueryTest {
     checkAnswer(
       sql("SELECT tableName FROM tableName"),
       "test")
+  }
+
+  test("SPARK-2407 Added Parser of SQL SUBSTR()") {
+    checkAnswer(
+      sql("SELECT substr(tableName, 1, 2) FROM tableName"),
+      "te")
+    checkAnswer(
+      sql("SELECT substr(tableName, 3) FROM tableName"),
+      "st")
+    checkAnswer(
+      sql("SELECT substring(tableName, 1, 2) FROM tableName"),
+      "te")
+    checkAnswer(
+      sql("SELECT substring(tableName, 3) FROM tableName"),
+      "st")
   }
 
   test("index into array") {
@@ -369,6 +386,31 @@ class SQLQuerySuite extends QueryTest {
         (3, null)))
   }
 
+  test("EXCEPT") {
+
+    checkAnswer(
+      sql("SELECT * FROM lowerCaseData EXCEPT SELECT * FROM upperCaseData "),
+      (1, "a") ::
+      (2, "b") ::
+      (3, "c") ::
+      (4, "d") :: Nil)
+    checkAnswer(
+      sql("SELECT * FROM lowerCaseData EXCEPT SELECT * FROM lowerCaseData "), Nil)
+    checkAnswer(
+      sql("SELECT * FROM upperCaseData EXCEPT SELECT * FROM upperCaseData "), Nil)
+  }
+
+ test("INTERSECT") {
+    checkAnswer(
+      sql("SELECT * FROM lowerCaseData INTERSECT SELECT * FROM lowerCaseData"),
+      (1, "a") ::
+      (2, "b") ::
+      (3, "c") ::
+      (4, "d") :: Nil)
+    checkAnswer(
+      sql("SELECT * FROM lowerCaseData INTERSECT SELECT * FROM upperCaseData"), Nil)
+  }
+
   test("SET commands semantics using sql()") {
     clear()
     val testKey = "test.key.0"
@@ -404,5 +446,4 @@ class SQLQuerySuite extends QueryTest {
     )
     clear()
   }
-
 }

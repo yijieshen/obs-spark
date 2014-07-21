@@ -84,7 +84,7 @@ private[hive] object HiveFunctionRegistry
     case c: Class[_] if c == classOf[hadoopIo.FloatWritable] => FloatType
     case c: Class[_] if c == classOf[hadoopIo.BooleanWritable] => BooleanType
     case c: Class[_] if c == classOf[hadoopIo.BytesWritable] => BinaryType
-    
+
     // java class
     case c: Class[_] if c == classOf[java.lang.String] => StringType
     case c: Class[_] if c == classOf[java.sql.Timestamp] => TimestampType
@@ -98,7 +98,7 @@ private[hive] object HiveFunctionRegistry
     case c: Class[_] if c == classOf[java.lang.Byte] => ByteType
     case c: Class[_] if c == classOf[java.lang.Float] => FloatType
     case c: Class[_] if c == classOf[java.lang.Boolean] => BooleanType
-    
+
     // primitive type
     case c: Class[_] if c == java.lang.Short.TYPE => ShortType
     case c: Class[_] if c == java.lang.Integer.TYPE => IntegerType
@@ -107,7 +107,7 @@ private[hive] object HiveFunctionRegistry
     case c: Class[_] if c == java.lang.Byte.TYPE => ByteType
     case c: Class[_] if c == java.lang.Float.TYPE => FloatType
     case c: Class[_] if c == java.lang.Boolean.TYPE => BooleanType
-    
+
     case c: Class[_] if c.isArray => ArrayType(javaClassToDataType(c.getComponentType))
   }
 }
@@ -148,7 +148,7 @@ private[hive] trait HiveFunctionFactory {
     case p: java.lang.Byte => p
     case p: java.lang.Boolean => p
     case str: String => str
-    case p: BigDecimal => p
+    case p: java.math.BigDecimal => p
     case p: Array[Byte] => p
     case p: java.sql.Timestamp => p
   }
@@ -280,6 +280,10 @@ private[hive] case class HiveGenericUdf(name: String, children: Seq[Expression])
 private[hive] trait HiveInspectors {
 
   def unwrapData(data: Any, oi: ObjectInspector): Any = oi match {
+    case hvoi: HiveVarcharObjectInspector => 
+      if (data == null) null else hvoi.getPrimitiveJavaObject(data).getValue
+    case hdoi: HiveDecimalObjectInspector => 
+      if (data == null) null else BigDecimal(hdoi.getPrimitiveJavaObject(data).bigDecimalValue())
     case pi: PrimitiveObjectInspector => pi.getPrimitiveJavaObject(data)
     case li: ListObjectInspector =>
       Option(li.getList(data))
