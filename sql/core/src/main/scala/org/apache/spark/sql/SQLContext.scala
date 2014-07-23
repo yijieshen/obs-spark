@@ -309,8 +309,8 @@ class SQLContext(@transient val sparkContext: SparkContext)
       Batch("Prepare Expressions", Once, new BindReferences[SparkPlan]) :: Nil
   }
 
-  @transient protected val rowNumInBatch = get("batchexecution.batch.size", "1000").toInt
-  @transient protected val batchExecution = get("batchexecution.plan.convert", "true").toBoolean
+  @transient protected val rowNumInBatch = get("spark.sql.batchexec.batch.size", "1000").toInt
+  @transient protected val batchExecution = get("spark.sql.batchexec.plan.convert", "false").toBoolean
 
   @transient
   protected[sql] val toBatchPlan = new RuleExecutor[SparkPlan] {
