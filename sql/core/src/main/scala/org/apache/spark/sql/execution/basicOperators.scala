@@ -39,10 +39,7 @@ case class Project(projectList: Seq[NamedExpression], child: SparkPlan) extends 
 
   override def execute() = child.execute().mapPartitions { iter =>
     @transient val reusableProjection = new MutableProjection(projectList)
-    iter.map { row =>
-      Console.println("current row: " + row)
-      reusableProjection(row)
-    }
+    iter.map(reusableProjection)
   }
 }
 
@@ -54,11 +51,7 @@ case class Filter(condition: Expression, child: SparkPlan) extends UnaryNode {
   override def output = child.output
 
   override def execute() = child.execute().mapPartitions { iter =>
-    iter.filter{ row =>
-      val bl = condition.eval(row).asInstanceOf[Boolean]
-      Console.println("Filter " + bl)
-      bl
-    }
+    iter.filter(condition.eval(_).asInstanceOf[Boolean])
   }
 }
 

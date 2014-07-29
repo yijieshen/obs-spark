@@ -351,6 +351,8 @@ class SQLContext(@transient val sparkContext: SparkContext)
          |${stringOrError(optimizedPlan)}
          |== Physical Plan ==
          |${stringOrError(executedPlan)}
+         |== batch execution enabled ==
+         |Boolean: ${batchExecution}
       """.stripMargin.trim
   }
 
