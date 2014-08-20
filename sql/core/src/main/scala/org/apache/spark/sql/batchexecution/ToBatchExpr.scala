@@ -17,8 +17,8 @@ private[sql] case class ToBatchExpr(sqlContext: SQLContext)
           BatchLiteral(value, dataType)
         case Rand =>
           BatchRand
-        case BoundReference(ordinal, baseReference) =>
-          BatchBoundReference(ordinal, baseReference)
+        case BoundReference(ordinal, dataType, nullable) =>
+          BatchBoundReference(ordinal, dataType, nullable)
         case a @ Alias(child: BE, name) =>
           BatchAlias(child, name)(a.exprId, a.qualifiers)
 
