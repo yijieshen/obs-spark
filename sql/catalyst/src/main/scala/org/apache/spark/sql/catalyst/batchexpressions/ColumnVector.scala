@@ -7,14 +7,38 @@ abstract class ColumnVector {
 
   def rowNum: Int
   type fieldType <: Any
-  def content: Array[fieldType]
+
+  def getInt(i: Int): Int = ???
+  def setInt(i: Int, v: Int): Unit = ???
+
+  def getLong(i: Int): Long = ???
+  def setLong(i: Int, v: Long): Unit = ???
+
+  def getDouble(i: Int): Double = ???
+  def setDouble(i: Int, v: Double): Unit = ???
+
+  def getFloat(i: Int): Float = ???
+  def setFloat(i: Int, v: Float): Unit = ???
+
+  def getBoolean(i: Int): Boolean = ???
+  def setBoolean(i: Int, v: Boolean): Unit = ???
+
+  def getShort(i: Int): Short = ???
+  def setShort(i: Int, v: Short): Unit = ???
+
+  def getByte(i: Int): Byte = ???
+  def setByte(i: Int, v: Byte): Unit = ???
+
+  def getString(i: Int): String = ???
+  def setString(i: Int, v: String): Unit = ???
+
+  def get(i: Int): fieldType = ???
+  def set(i: Int, v: fieldType): Unit = ???
 
   //(null -> 0) (notNull -> 1)
   var notNullArray: BitSet = _
 
-  def get(i: Int) = content(i)
-  def set(i: Int, v: fieldType) = content(i) = v
-
+  //TODO: better way to do this, how to avoid boxing & downcasting?
   def setNullable(i: Int, nullable: Any) = {
     if(nullable == null) {
       if(notNullArray == null) {
@@ -41,8 +65,11 @@ abstract class ColumnVector {
 }
 
 class DoubleColumnVector(val rowNum: Int) extends ColumnVector {
-  type fieldType = DoubleType.JvmType
-  val content = new Array[fieldType](rowNum)
+  type fieldType = Double
+  val content = new Array[Double](rowNum)
+
+  override def getDouble(i: Int) = content(i)
+  override def setDouble(i: Int, v: Double) = content(i) = v
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setDouble(ordinal, get(index))
@@ -50,8 +77,11 @@ class DoubleColumnVector(val rowNum: Int) extends ColumnVector {
 }
 
 class LongColumnVector(val rowNum: Int) extends ColumnVector {
-  type fieldType = LongType.JvmType
-  val content = new Array[fieldType](rowNum)
+  type fieldType = Long
+  val content = new Array[Long](rowNum)
+
+  override def getLong(i: Int): Long = content(i)
+  override def setLong(i: Int, v: Long): Unit = content(i) = v
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setLong(ordinal, get(index))
@@ -59,8 +89,11 @@ class LongColumnVector(val rowNum: Int) extends ColumnVector {
 }
 
 class IntColumnVector(val rowNum: Int) extends ColumnVector {
-  type fieldType = IntegerType.JvmType
-  val content = new Array[fieldType](rowNum)
+  type fieldType = Int
+  val content = new Array[Int](rowNum)
+
+  override def getInt(i: Int): Int = content(i)
+  override def setInt(i: Int, v: Int): Unit = content(i) = v
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setInt(ordinal, get(index))
@@ -68,8 +101,11 @@ class IntColumnVector(val rowNum: Int) extends ColumnVector {
 }
 
 class FloatColumnVector(val rowNum: Int) extends ColumnVector {
-  type fieldType = FloatType.JvmType
-  val content = new Array[fieldType](rowNum)
+  type fieldType = Float
+  val content = new Array[Float](rowNum)
+
+  override def getFloat(i: Int): Float = content(i)
+  override def setFloat(i: Int, v: Float): Unit = content(i) = v
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setFloat(ordinal, get(index))
@@ -77,8 +113,11 @@ class FloatColumnVector(val rowNum: Int) extends ColumnVector {
 }
 
 class ShortColumnVector(val rowNum: Int) extends ColumnVector {
-  type fieldType = ShortType.JvmType
-  val content = new Array[fieldType](rowNum)
+  type fieldType = Short
+  val content = new Array[Short](rowNum)
+
+  override def getShort(i: Int): Short = content(i)
+  override def setShort(i: Int, v: Short): Unit = content(i) = v
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setShort(ordinal, get(index))
@@ -86,8 +125,11 @@ class ShortColumnVector(val rowNum: Int) extends ColumnVector {
 }
 
 class ByteColumnVector(val rowNum: Int) extends ColumnVector {
-  type fieldType = ByteType.JvmType
-  val content = new Array[fieldType](rowNum)
+  type fieldType = Byte
+  val content = new Array[Byte](rowNum)
+
+  override def getByte(i: Int): Byte = content(i)
+  override def setByte(i: Int, v: Byte): Unit = content(i) = v
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setByte(ordinal, get(index))
@@ -96,7 +138,10 @@ class ByteColumnVector(val rowNum: Int) extends ColumnVector {
 
 class StringColumnVector(val rowNum: Int) extends ColumnVector {
   type fieldType = String
-  val content = new Array[fieldType](rowNum)
+  val content = new Array[String](rowNum)
+
+  override def getString(i: Int): String = content(i)
+  override def setString(i: Int, v: String): Unit = content(i) = v
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setString(ordinal, get(index))
@@ -107,6 +152,9 @@ class BinaryColumnVector(val rowNum: Int) extends ColumnVector {
   type fieldType = Array[Byte]
   val content = new Array[fieldType](rowNum)
 
+  override def get(i: Int) = content(i)
+  override def set(i: Int, v: fieldType) = content(i) = v
+
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.update(ordinal, get(index))
   }
@@ -114,9 +162,8 @@ class BinaryColumnVector(val rowNum: Int) extends ColumnVector {
 
 class BooleanColumnVector(val rowNum: Int, val bs: BitSet) extends ColumnVector {
   type fieldType = Boolean
-  def content = new Array[fieldType](0)
-  override def get(i: Int) = bs.get(i)
-  override def set(i: Int, v: fieldType) = bs.set(i, v)
+  override def getBoolean(i: Int) = bs.get(i)
+  override def setBoolean(i: Int, v: Boolean) = bs.set(i, v)
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setBoolean(ordinal, get(index))
@@ -129,8 +176,8 @@ abstract class FakeColumnVector extends ColumnVector {
 }
 
 case class DoubleLiteral(value: Double) extends FakeColumnVector {
-  type fieldType = DoubleType.JvmType
-  override def get(i: Int) = value
+  type fieldType = Double
+  override def getDouble(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setDouble(ordinal, value)
@@ -138,8 +185,8 @@ case class DoubleLiteral(value: Double) extends FakeColumnVector {
 }
 
 case class LongLiteral(val value: Long) extends FakeColumnVector {
-  type fieldType = LongType.JvmType
-  override def get(i: Int) = value
+  type fieldType = Long
+  override def getLong(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setLong(ordinal, value)
@@ -147,8 +194,8 @@ case class LongLiteral(val value: Long) extends FakeColumnVector {
 }
 
 case class IntLiteral(val value: Int) extends FakeColumnVector {
-  type fieldType = IntegerType.JvmType
-  override def get(i: Int) = value
+  type fieldType = Int
+  override def getInt(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setInt(ordinal, value)
@@ -156,8 +203,8 @@ case class IntLiteral(val value: Int) extends FakeColumnVector {
 }
 
 case class FloatLiteral(val value: Float) extends FakeColumnVector {
-  type fieldType = FloatType.JvmType
-  override def get(i: Int) = value
+  type fieldType = Float
+  override def getFloat(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setFloat(ordinal, value)
@@ -165,8 +212,8 @@ case class FloatLiteral(val value: Float) extends FakeColumnVector {
 }
 
 case class ShortLiteral(val value: Short) extends FakeColumnVector {
-  type fieldType = ShortType.JvmType
-  override def get(i: Int) = value
+  type fieldType = Short
+  override def getShort(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setShort(ordinal, value)
@@ -174,8 +221,8 @@ case class ShortLiteral(val value: Short) extends FakeColumnVector {
 }
 
 case class ByteLiteral(val value: Byte) extends FakeColumnVector {
-  type fieldType = ByteType.JvmType
-  override def get(i: Int) = value
+  type fieldType = Byte
+  override def getByte(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setByte(ordinal, value)
@@ -184,7 +231,7 @@ case class ByteLiteral(val value: Byte) extends FakeColumnVector {
 
 case class StringLiteral(val value: String) extends FakeColumnVector {
   type fieldType = String
-  override def get(i: Int) = value
+  override def getString(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setString(ordinal, value)
@@ -202,7 +249,7 @@ case class BinaryLiteral(val value: Array[Byte]) extends FakeColumnVector {
 
 case class BooleanLiteral(val value: Boolean) extends FakeColumnVector {
   type fieldType = Boolean
-  override def get(i: Int) = value
+  override def getBoolean(i: Int) = value
 
   override def setField(row: MutableRow, ordinal: Int, index: Int): Unit = {
     row.setBoolean(ordinal, value)

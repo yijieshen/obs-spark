@@ -6,6 +6,7 @@ import scala.collection.mutable.Map
 
 class RowBatch(val rowNum: Int) {
 
+  //TODO: substitute name to vector mapping into ordinal to column List?
   // the columns come from table or as result tuple
   val name2Vector = Map.empty[String, ColumnVector]
 
