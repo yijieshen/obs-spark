@@ -58,6 +58,52 @@ abstract class BatchCodeGenerator {
     val cvTerm = freshName("cvTerm") //result cv
     val inputRowBatch = newTermName(s"rowBatch")
 
+    implicit class Evaluate1(e: Expression) {
+      def cast(f: TermName => Tree, resultType: DataType): Seq[Tree] = {
+        val eval = expressionEvaluator(e)
+
+        val dt = reify(resultType)
+        val cv = eval.cvTerm
+        val nna = eval.notNullArrayTerm
+
+        val setter = mutatorForType(resultType)
+        val getter = accessorForType(e.dataType)
+
+        val bitmap = freshName("bitmap")
+        val selector = freshName("selector")
+        val bmIter = freshName("bmIter")
+        val i = freshName("i")
+        val rowNum = freshName("curRowNum")
+
+        val castCode = f(q"$cv.$getter($i)")
+
+        eval.code ++
+        q"""
+          val $cvTerm = $columnVectorObj.apply($dt, $inputRowBatch.curRowNum)
+          val $selector = $inputRowBatch.curSelector
+          val $bitmap = ${andWithNull(nna, selector, true)}
+
+          if ($bitmap != null) {
+            $bitmap.availableBits = $inputRowBatch.curRowNum
+            val $bmIter = $bitmap.iterator
+            var $i = 0
+            while ($bmIter.hasNext) {
+              $i = $bmIter.next()
+              $cvTerm.$setter($i, $castCode)
+            }
+          } else {
+            val $rowNum = $inputRowBatch.curRowNum
+            var $i = 0
+            while ($i < $rowNum) {
+              $cvTerm.$setter($i, $castCode)
+              $i += 1
+            }
+          }
+          $cvTerm.notNullArray = $nna.copy
+        """.children
+      }
+    }
+
     implicit class Evaluate2(expressions: (Expression, Expression)) {
       def evaluate(f: (Tree, Tree) => Tree): Seq[Tree] =
         evaluateAs(expressions._1.dataType)(f)
@@ -113,15 +159,25 @@ abstract class BatchCodeGenerator {
 
     val primitiveEvaluation: PartialFunction[Expression, Seq[Tree]] = {
 
-
-
       case b @ BoundReference(ordinal, dataType, nullable) =>
         q"""
           val $cvTerm = ${getCV(inputRowBatch, ordinal)}.asInstanceOf[${getCVType(dataType)}]
         """.children
 
       //TODO: Literal handling
-      //TODO: Cast handling
+      //TODO: Cast handling(Binary2String, timestamp etc)
+
+      case Cast(child @ NumericType(), IntegerType) =>
+        child.cast(c => q"$c.toInt", IntegerType)
+
+      case Cast(child @ NumericType(), LongType) =>
+        child.cast(c => q"$c.toLong", LongType)
+
+      case Cast(child @ NumericType(), DoubleType) =>
+        child.cast(c => q"$c.toDouble", DoubleType)
+
+      case Cast(child @ NumericType(), FloatType) =>
+        child.cast(c => q"$c.toFloat", IntegerType)
 
       case Add(e1, e2) =>      (e1, e2) evaluate { (v1, v2) => q"$v1 + $v2" }
       case Subtract(e1, e2) => (e1, e2) evaluate { (v1, v2) => q"$v1 - $v2" }
@@ -221,10 +277,12 @@ abstract class BatchCodeGenerator {
           """.children
     }
 
-    val code = q"".children
+    val code: Seq[Tree] =
+      primitiveEvaluation.apply(e)
+
     EvaluatedExpression(code, notNullArrayTerm, cvTerm)
   }
-""""""
+
   protected def getCV(inputRB: TermName, ordinal: Int) = {
     q"$inputRB.name2Vector($ordinal.toString)"
   }
