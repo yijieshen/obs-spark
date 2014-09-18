@@ -1,11 +1,14 @@
 package org.apache.spark.sql.catalyst.batchexpressions.codegen
 
+import com.google.common.cache.{CacheLoader, CacheBuilder}
+
+import org.apache.spark.Logging
 import org.apache.spark.sql.catalyst.batchexpressions._
 import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.catalyst.types._
 
-abstract class BatchCodeGenerator {
+abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends Logging {
   import scala.reflect.runtime.universe._
   import scala.reflect.runtime.{universe => ru}
   import scala.tools.reflect.ToolBox
@@ -16,6 +19,51 @@ abstract class BatchCodeGenerator {
 
   private val curId = new java.util.concurrent.atomic.AtomicInteger()
   private val javaSeparator = "$"
+
+  /**
+   * Generates a class for a given input expression.  Called when there is not cached code
+   * already available.
+   */
+  protected def create(in: InType): OutType
+
+  /**
+   * Canonicalizes an input expression. Used to avoid double caching expressions that differ only
+   * cosmetically.
+   */
+  protected def canonicalize(in: InType): InType
+
+  /** Binds an input expression to a given input schema,
+    *  i.e. transform expressions with AttributeReference into exprs with BoundReference*/
+  protected def bind(in: InType, inputSchema: Seq[Attribute]): InType
+
+  /**
+   * A cache of generated classes.
+   *
+   * From the Guava Docs: A Cache is similar to ConcurrentMap, but not quite the same. The most
+   * fundamental difference is that a ConcurrentMap persists all elements that are added to it until
+   * they are explicitly removed. A Cache on the other hand is generally configured to evict entries
+   * automatically, in order to constrain its memory footprint
+   */
+  protected val cache = CacheBuilder.newBuilder()
+    .maximumSize(1000)
+    .build(
+      new CacheLoader[InType, OutType]() {
+        override def load(in: InType): OutType = globalLock.synchronized {
+          val startTime = System.nanoTime()
+          val result = create(in)
+          val endTime = System.nanoTime()
+          def timeMs = (endTime - startTime).toDouble / 1000000
+          logInfo(s"Code generated expression $in in $timeMs ms")
+          result
+        }
+      })
+
+  /** Generates the requested evaluator binding the given expression(s) to the inputSchema. */
+  def apply(expressions: InType, inputSchema: Seq[Attribute]): OutType =
+    apply(bind(expressions, inputSchema))
+
+  /** Generates the requested evaluator given already bound expression(s). */
+  def apply(expressions: InType): OutType = cache.get(canonicalize(expressions))
 
   /**
    * Returns a term name that is unique within this instance of a `CodeGenerator`.

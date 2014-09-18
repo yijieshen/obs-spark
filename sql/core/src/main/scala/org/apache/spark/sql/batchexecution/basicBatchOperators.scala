@@ -3,6 +3,7 @@ package org.apache.spark.sql.batchexecution
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.batchexpressions._
+import org.apache.spark.sql.catalyst.batchexpressions.codegen.GenerateBatchMutableProjection
 import org.apache.spark.sql.catalyst.expressions.{Attribute, GenericMutableRow, NamedExpression, Row}
 import org.apache.spark.sql.columnar.{ColumnAccessor, InMemoryRelation}
 
@@ -12,8 +13,9 @@ import org.apache.spark.sql.columnar.{ColumnAccessor, InMemoryRelation}
 @DeveloperApi
 case class BatchProject(projectList: Seq[NamedExpression], child: SparkBatchPlan)
   extends UnaryBatchNode {
-
   override def output = projectList.map(_.toAttribute)
+
+  @transient lazy val buildProjection = GenerateBatchMutableProjection(projectList, child.output)
 
   override def batchExecute() = child.batchExecute().mapPartitions { iter =>
     @transient val batchProj = new BatchProjection(projectList)
