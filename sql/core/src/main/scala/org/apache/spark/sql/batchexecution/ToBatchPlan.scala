@@ -11,7 +11,7 @@ private[sql] case class ToBatchPlan(sqlContext: SQLContext, rowNumInBatch: Int)
   extends Rule[SparkPlan] {
 
   def apply(plan: SparkPlan): SparkPlan = plan.transformUp {
-    case Filter(cond: BE, child: BP) =>
+    case Filter(cond, child: BP) =>
       BatchFilter(cond, child)
     case Project(projectList, child: BP) =>
       BatchProject(projectList, child)

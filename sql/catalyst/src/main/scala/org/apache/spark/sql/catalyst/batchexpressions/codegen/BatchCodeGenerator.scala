@@ -13,7 +13,17 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
   import scala.reflect.runtime.{universe => ru}
   import scala.tools.reflect.ToolBox
 
-  protected val toolBox = runtimeMirror(getClass.getClassLoader).mkToolBox()
+  protected val toolBox = runtimeMirror(getClass.getClassLoader).mkToolBox(/*options = "-Ydump-classes /Users/yijie/abc/"*/)
+
+  protected val rowBatchType = typeOf[RowBatch]
+  protected val rbProjectionType = typeOf[RBProjection]
+
+  protected val doubleLiteralType = typeOf[DoubleLiteral]
+  protected val longLiteralType = typeOf[LongLiteral]
+  protected val intLiteralType = typeOf[IntLiteral]
+  protected val stringLiteralType = typeOf[StringLiteral]
+  protected val booleanLiteralType = typeOf[BooleanLiteral]
+
 
   protected val columnVectorObj = reify(ColumnVector)
 
@@ -75,20 +85,6 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
     newTermName(s"$prefix$javaSeparator${curId.getAndIncrement}")
   }
 
-  protected def accessorForType(dt: DataType) = newTermName(s"get${primitiveForType(dt)}")
-  protected def mutatorForType(dt: DataType) = newTermName(s"set${primitiveForType(dt)}")
-
-  protected def primitiveForType(dt: DataType) = dt match {
-    case IntegerType => "Int"
-    case LongType => "Long"
-    case ShortType => "Short"
-    case ByteType => "Byte"
-    case DoubleType => "Double"
-    case FloatType => "Float"
-    case BooleanType => "Boolean"
-    case StringType => "String"
-  }
-
   /**
    * Scala ASTs for evaluating an
    *
@@ -104,10 +100,10 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
   def expressionEvaluator(e: Expression): EvaluatedExpression = {
     val notNullArrayTerm = freshName("notNullArrayTerm") //result cv's notnullarry
     val cvTerm = freshName("cvTerm") //result cv
-    val inputRowBatch = newTermName(s"rowBatch")
+    val inputRowBatch = newTermName(s"input")
 
     implicit class Evaluate1(e: Expression) {
-      def cast(f: TermName => Tree, resultType: DataType): Seq[Tree] = {
+      def cast(f: Tree => Tree, resultType: DataType): Seq[Tree] = {
         val eval = expressionEvaluator(e)
 
         val dt = reify(resultType)
@@ -128,6 +124,7 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
         eval.code ++
         q"""
           val $cvTerm = $columnVectorObj.apply($dt, $inputRowBatch.curRowNum)
+          val $notNullArrayTerm = if($nna != null) $nna.copy else null
           val $selector = $inputRowBatch.curSelector
           val $bitmap = ${andWithNull(nna, selector, true)}
 
@@ -147,7 +144,7 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
               $i += 1
             }
           }
-          $cvTerm.notNullArray = $nna.copy
+          $cvTerm.notNullArray = $notNullArrayTerm
         """.children
       }
     }
@@ -210,10 +207,42 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
       case b @ BoundReference(ordinal, dataType, nullable) =>
         q"""
           val $cvTerm = ${getCV(inputRowBatch, ordinal)}.asInstanceOf[${getCVType(dataType)}]
+          val $notNullArrayTerm = $cvTerm.notNullArray
         """.children
 
       //TODO: Literal handling
       //TODO: Cast handling(Binary2String, timestamp etc)
+      //TODO: remainder(%)
+
+      case expressions.Literal(value: Boolean, dataType) =>
+        q"""
+          val $cvTerm = new $booleanLiteralType($value)
+          val $notNullArrayTerm = $cvTerm.notNullArray
+         """.children
+
+      case expressions.Literal(value: String, dataType) =>
+        q"""
+          val $cvTerm = new $stringLiteralType($value)
+          val $notNullArrayTerm = $cvTerm.notNullArray
+         """.children
+
+      case expressions.Literal(value: Int, dataType) =>
+        q"""
+          val $cvTerm = new $intLiteralType($value)
+          val $notNullArrayTerm = $cvTerm.notNullArray
+         """.children
+
+      case expressions.Literal(value: Long, dataType) =>
+        q"""
+          val $cvTerm = new $longLiteralType($value)
+          val $notNullArrayTerm = $cvTerm.notNullArray
+         """.children
+
+      case expressions.Literal(value: Double, dataType) =>
+        q"""
+          val $cvTerm = new $doubleLiteralType($value)
+          val $notNullArrayTerm = $cvTerm.notNullArray
+         """.children
 
       case Cast(child @ NumericType(), IntegerType) =>
         child.cast(c => q"$c.toInt", IntegerType)
@@ -231,16 +260,18 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
       case Subtract(e1, e2) => (e1, e2) evaluate { (v1, v2) => q"$v1 - $v2" }
       case Multiply(e1, e2) => (e1, e2) evaluate { (v1, v2) => q"$v1 * $v2" }
       case Divide(e1, e2) =>   (e1, e2) evaluate { (v1, v2) => q"$v1 / $v2" }
+      case Remainder(e1 @ IntegerType(), e2 @ IntegerType()) =>
+        (e1, e2) evaluate { (v1, v2) => q"$v1 % $v2" }
 
       case EqualTo(e1, e2) =>
         (e1, e2).evaluateAs (BooleanType) {(v1, v2) => q"$v1 == $v2"}
-      case GreaterThan(e1 @ NumericType(), e2 @ NumericType) =>
+      case GreaterThan(e1 @ NumericType(), e2 @ NumericType()) =>
         (e1, e2).evaluateAs (BooleanType) {(v1, v2) => q"$v1 > $v2"}
-      case GreaterThanOrEqual(e1 @ NumericType(), e2 @ NumericType) =>
+      case GreaterThanOrEqual(e1 @ NumericType(), e2 @ NumericType()) =>
         (e1, e2).evaluateAs (BooleanType) {(v1, v2) => q"$v1 >= $v2"}
-      case LessThan(e1 @ NumericType(), e2 @ NumericType) =>
+      case LessThan(e1 @ NumericType(), e2 @ NumericType()) =>
         (e1, e2).evaluateAs (BooleanType) {(v1, v2) => q"$v1 < $v2"}
-      case LessThanOrEqual(e1 @ NumericType(), e2 @ NumericType) =>
+      case LessThanOrEqual(e1 @ NumericType(), e2 @ NumericType()) =>
         (e1, e2).evaluateAs (BooleanType) {(v1, v2) => q"$v1 <= $v2"}
 
 
@@ -332,11 +363,11 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
   }
 
   protected def getCV(inputRB: TermName, ordinal: Int) = {
-    q"$inputRB.name2Vector($ordinal.toString)"
+    q"$inputRB.vectors($ordinal)"
   }
 
-  protected def setCV(outputRB: TermName, aliasName: String, value: TermName) = {
-    q"$outputRB.name2Vector($aliasName) = $value"
+  protected def setCV(outputRB: TermName, ordinal: Int, value: TermName) = {
+    q"$outputRB.vectors($ordinal) = $value"
   }
 
   protected def accessorForType(dt: DataType) = newTermName(s"get${primitiveForType(dt)}")
@@ -364,7 +395,7 @@ abstract class BatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extends L
     case StringType => typeOf[StringColumnVector]
   }
 
-  protected def andWithNull(bs1: TermName, bs2: TermName, cp: Boolean): Seq[Tree] = {
+  protected def andWithNull(bs1: TermName, bs2: TermName, cp: Boolean): Tree = {
     q"""
       if ($bs1 != null && $bs2 != null) {
       $bs1 & $bs2

@@ -2,9 +2,8 @@ package org.apache.spark.sql.batchexecution
 
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql._
-import org.apache.spark.sql.catalyst.batchexpressions.{BitSet, ColumnVector, RowBatch}
-import org.apache.spark.sql.catalyst.expressions.{MutableRow, GenericMutableRow}
+import org.apache.spark.sql.catalyst.batchexpressions.{IntIterator, BitSet, ColumnVector, RowBatch}
+import org.apache.spark.sql.catalyst.expressions.{GenericMutableRow, MutableRow, Row}
 import org.apache.spark.sql.catalyst.plans.physical._
 import org.apache.spark.sql.execution.{BinaryNode, LeafNode, SparkPlan, UnaryNode}
 
@@ -20,14 +19,14 @@ trait SparkBatchPlan extends SparkPlan {
       var nextSelectors: BitSet = null
       var rowCountInRB = 0
       var curRowNumInRB = 0
-      var curIterator: Iterator[Int] = null
+      var curIterator: IntIterator = null
 
       def getNextRowBatch(): Boolean = {
         curRowNumInRB = 0
         if(batchIter.hasNext) {
           nextRowBatch = batchIter.next()
           rowCountInRB = nextRowBatch.curRowNum
-          nextCVs = RowBatch.getColumnVectors(output, nextRowBatch)
+          nextCVs = nextRowBatch.vectors
           nextSelectors = nextRowBatch.curSelector
           if(nextSelectors != null) curIterator = nextSelectors.iterator
           true

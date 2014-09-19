@@ -21,7 +21,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.SparkContext
 import org.apache.spark.annotation.{AlphaComponent, DeveloperApi, Experimental}
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.batchexecution.{ToBatchExpr, ToBatchPlan}
+import org.apache.spark.sql.batchexecution.ToBatchPlan
 import org.apache.spark.sql.catalyst.ScalaReflection
 import org.apache.spark.sql.catalyst.analysis._
 import org.apache.spark.sql.catalyst.dsl.ExpressionConversions
@@ -382,12 +382,12 @@ class SQLContext(@transient val sparkContext: SparkContext)
   }
 
   @transient protected val rowNumInBatch = getConf("spark.sql.batchexec.batch.size", "1000").toInt
-  @transient protected val batchExecution = getConf("spark.sql.batchexec.plan.convert", "false").toBoolean
+  @transient protected val batchExecution = getConf("spark.sql.batchexec.plan.convert", "true").toBoolean
 
   @transient
   protected[sql] val toBatchPlan = new RuleExecutor[SparkPlan] {
     val batches =
-      Batch("Expression transform", Once, ToBatchExpr(self)) ::
+      //Batch("Expression transform", Once, ToBatchExpr(self)) ::
       Batch("Operator transform", Once, ToBatchPlan(self, rowNumInBatch)) :: Nil
   }
 

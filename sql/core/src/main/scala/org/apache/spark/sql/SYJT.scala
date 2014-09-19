@@ -11,7 +11,7 @@ object SYJT {
   t1.registerAsTable("t1")
 
   def main(args: Array[String]) {
-    val srdd = sql("SELECT key, a+b*c, c+a+b from t1")
+    val srdd = sql("SELECT c from t1 where a % 2 = 0")
     srdd.collect().foreach(println)
     println(
       s"""

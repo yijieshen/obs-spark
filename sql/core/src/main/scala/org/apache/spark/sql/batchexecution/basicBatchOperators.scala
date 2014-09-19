@@ -3,8 +3,8 @@ package org.apache.spark.sql.batchexecution
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.batchexpressions._
-import org.apache.spark.sql.catalyst.batchexpressions.codegen.GenerateBatchMutableProjection
-import org.apache.spark.sql.catalyst.expressions.{Attribute, GenericMutableRow, NamedExpression, Row}
+import org.apache.spark.sql.catalyst.batchexpressions.codegen.{GenerateBatchPredicate, GenerateBatchMutableProjection}
+import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.columnar.{ColumnAccessor, InMemoryRelation}
 
 /**
@@ -18,8 +18,8 @@ case class BatchProject(projectList: Seq[NamedExpression], child: SparkBatchPlan
   @transient lazy val buildProjection = GenerateBatchMutableProjection(projectList, child.output)
 
   override def batchExecute() = child.batchExecute().mapPartitions { iter =>
-    @transient val batchProj = new BatchProjection(projectList)
-    iter.map(batchProj)
+    val projection = buildProjection()
+    iter.map(projection)
   }
 }
 
@@ -27,15 +27,13 @@ case class BatchProject(projectList: Seq[NamedExpression], child: SparkBatchPlan
  * :: DeveloperApi ::
  */
 @DeveloperApi
-case class BatchFilter(condition: BatchExpression, child: SparkBatchPlan) extends UnaryBatchNode {
+case class BatchFilter(condition: Expression, child: SparkBatchPlan) extends UnaryBatchNode {
   override def output = child.output
 
+  @transient lazy val conditionEvaluator = GenerateBatchPredicate(condition, child.output)
+
   override def batchExecute() = child.batchExecute().mapPartitions { iter =>
-    iter.map { rowBatch =>
-      val selector = condition.eval(rowBatch).asInstanceOf[BooleanColumnVector].bs
-      rowBatch.curSelector = selector
-      rowBatch
-    }
+    iter.map(conditionEvaluator)
   }
 }
 
@@ -51,7 +49,7 @@ case class ExistingRowBatchRdd(attributes: Seq[Attribute], rdd: RDD[Row], rowNum
   override def batchExecute(): RDD[RowBatch] = {
     rdd.mapPartitions { iterator =>
       val nextRowBatch = RowBatch.buildFromAttributes(attributes, rowNum)
-      val cvs = RowBatch.getColumnVectors(attributes, nextRowBatch)
+      val cvs = nextRowBatch.vectors
       var row: Row = null
       new Iterator[RowBatch] {
 
@@ -95,7 +93,7 @@ case class InMemoryColumnarBatchRdd(
     relation.cachedColumnBuffers.mapPartitions { iterator =>
 
       val nextRowBatch = RowBatch.buildFromAttributes(attributes, rowNum)
-      val cvs = RowBatch.getColumnVectors(attributes, nextRowBatch)
+      val cvs = nextRowBatch.vectors
 
       val columnBuffers = iterator.next()
       assert(!iterator.hasNext)

@@ -13,6 +13,6 @@ case class BatchBoundReference(ordinal: Int, dataType: DataType, nullable: Boole
 
   override def toString = s"input[$ordinal]"
 
-  override def eval(input: RowBatch): ColumnVector = input.name2Vector(ordinal.toString)
+  override def eval(input: RowBatch): ColumnVector = input.vectors(ordinal)
 
 }

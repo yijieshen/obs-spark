@@ -188,7 +188,7 @@ class BitSet(val numBits: Int) extends Serializable {
   /**
    * Get an iterator over the set bits.
    */
-  def iterator = new Iterator[Int] {
+  def iterator = new IntIterator {
     var ind = nextSetBit(0)
     override def hasNext: Boolean = (ind >= 0 && ind < availableBits)
     override def next() = {
@@ -251,4 +251,9 @@ class BitSet(val numBits: Int) extends Serializable {
 
   /** Return the number of longs it would take to hold numBits. */
   private def bit2words(numBits: Int) = ((numBits - 1) >> 6) + 1
+}
+
+abstract class IntIterator {
+  def hasNext: Boolean
+  def next(): Int
 }
