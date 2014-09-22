@@ -61,6 +61,18 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
     false
   }
 
+  val batchConvertEnabled: Boolean = if (sqlContext != null) {
+    sqlContext.batchConvertEnabled
+  } else {
+    true
+  }
+
+  val rowBatchSize: Int = if (sqlContext != null) {
+    sqlContext.rowBatchSize
+  } else {
+    1000
+  }
+
   /** Overridden make copy also propogates sqlContext to copied plan. */
   override def makeCopy(newArgs: Array[AnyRef]): this.type = {
     SparkPlan.currentContext.set(sqlContext)

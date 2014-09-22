@@ -381,15 +381,11 @@ class SQLContext(@transient val sparkContext: SparkContext)
       Batch("Add exchange", Once, AddExchange(self)) :: Nil
   }
 
-  @transient protected val rowNumInBatch = getConf("spark.sql.batchexec.batch.size", "1000").toInt
-  @transient protected val batchExecution =
-    getConf("spark.sql.batchexec.plan.convert", "false").toBoolean
-
   @transient
   protected[sql] val toBatchPlan = new RuleExecutor[SparkPlan] {
     val batches =
       //Batch("Expression transform", Once, ToBatchExpr(self)) ::
-      Batch("Operator transform", Once, ToBatchPlan(self, rowNumInBatch)) :: Nil
+      Batch("Operator transform", Once, ToBatchPlan(self, rowBatchSize)) :: Nil
   }
 
   /**
@@ -412,7 +408,7 @@ class SQLContext(@transient val sparkContext: SparkContext)
     // only used for execution.
     lazy val nonBatchPlan: SparkPlan = prepareForExecution(sparkPlan)
     lazy val executedPlan: SparkPlan =
-      if(batchExecution) toBatchPlan(nonBatchPlan) else nonBatchPlan
+      if(batchConvertEnabled) toBatchPlan(nonBatchPlan) else nonBatchPlan
 
     /** Internal version of the RDD. Avoids copies and has no schema */
     lazy val toRdd: RDD[Row] = executedPlan.execute()
@@ -429,9 +425,9 @@ class SQLContext(@transient val sparkContext: SparkContext)
          |${stringOrError(optimizedPlan)}
          |== Physical Plan ==
          |${stringOrError(executedPlan)}
-         |== batch execution enabled ==
-         |Boolean: ${batchExecution}
          |Code Generation: ${executedPlan.codegenEnabled}
+         |== Batch Execution Enabled ==
+         |${executedPlan.batchConvertEnabled}
          |== RDD ==
          |${stringOrError(toRdd.toDebugString)}
       """.stripMargin.trim

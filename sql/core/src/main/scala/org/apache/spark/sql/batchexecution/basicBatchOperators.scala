@@ -17,10 +17,13 @@
 
 package org.apache.spark.sql.batchexecution
 
+import java.nio.ByteBuffer
+
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.batchexpressions._
 import org.apache.spark.sql.catalyst.batchexpressions.codegen.{GenerateBatchPredicate, GenerateBatchMutableProjection}
+import org.apache.spark.sql.catalyst.expressions.Row
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.columnar.{ColumnAccessor, InMemoryRelation}
 
@@ -109,28 +112,42 @@ case class InMemoryColumnarBatchRdd(
   override def batchExecute(): RDD[RowBatch] = {
     relation.cachedColumnBuffers.mapPartitions { iterator =>
 
+      val requestedColumns =
+        if (attributes.isEmpty) {
+          Seq(0)
+        } else {
+          attributes.map(a => relation.output.indexWhere(_.exprId == a.exprId))
+        }
+
       val nextRowBatch = RowBatch.buildFromAttributes(attributes, rowNum)
       val cvs = nextRowBatch.vectors
 
-      val columnBuffers = iterator.next()
-      assert(!iterator.hasNext)
-
-      val requestedColumns =
-        if (attributes.isEmpty) Seq(0) else attributes.map(relation.output.indexOf(_))
-
-      val columnAccessors = requestedColumns.map(columnBuffers(_)).map(ColumnAccessor(_))
-      val nextRow = new GenericMutableRow(columnAccessors.length)
-
       new Iterator[RowBatch] {
-        override def hasNext: Boolean = columnAccessors.head.hasNext
+        var columnBuffers: Array[ByteBuffer] = null
+        var columnAccessors: Seq[ColumnAccessor] = null
+        nextBatch()
+
+        val nextRow = new GenericMutableRow(columnAccessors.length)
+
+        def nextBatch() = {
+          columnBuffers = iterator.next()
+          columnAccessors = requestedColumns.map(columnBuffers(_)).map(ColumnAccessor(_))
+        }
+
+        override def hasNext = columnAccessors.head.hasNext || iterator.hasNext
 
         override def next(): RowBatch = {
           cvs.foreach(_.reinit)
           var rc = 0
           val rowNum = nextRowBatch.rowNum
-          while (columnAccessors.head.hasNext && rc < rowNum) {
+          while ((columnAccessors.head.hasNext || iterator.hasNext) && rc < rowNum) {
+            if (!columnAccessors.head.hasNext) {
+              nextBatch()
+            }
+
             var i = 0
             while (i < nextRow.length) {
+              //TODO: Unnecessary tmp row, can we simplify this?
               columnAccessors(i).extractTo(nextRow, i)
               cvs(i).setNullable(rc, nextRow(i))
               i += 1
@@ -151,18 +168,31 @@ case class InMemoryColumnarBatchRdd(
    */
   override def execute() = {
     relation.cachedColumnBuffers.mapPartitions { iterator =>
-      val columnBuffers = iterator.next()
-      assert(!iterator.hasNext)
+      // Find the ordinals of the requested columns.  If none are requested, use the first.
+      val requestedColumns =
+        if (attributes.isEmpty) {
+          Seq(0)
+        } else {
+          attributes.map(a => relation.output.indexWhere(_.exprId == a.exprId))
+        }
 
       new Iterator[Row] {
-        // Find the ordinals of the requested columns.  If none are requested, use the first.
-        val requestedColumns =
-          if (attributes.isEmpty) Seq(0) else attributes.map(relation.output.indexOf(_))
+        private[this] var columnBuffers: Array[ByteBuffer] = null
+        private[this] var columnAccessors: Seq[ColumnAccessor] = null
+        nextBatch()
 
-        val columnAccessors = requestedColumns.map(columnBuffers(_)).map(ColumnAccessor(_))
-        val nextRow = new GenericMutableRow(columnAccessors.length)
+        private[this] val nextRow = new GenericMutableRow(columnAccessors.length)
+
+        def nextBatch() = {
+          columnBuffers = iterator.next()
+          columnAccessors = requestedColumns.map(columnBuffers(_)).map(ColumnAccessor(_))
+        }
 
         override def next() = {
+          if (!columnAccessors.head.hasNext) {
+            nextBatch()
+          }
+
           var i = 0
           while (i < nextRow.length) {
             columnAccessors(i).extractTo(nextRow, i)
@@ -171,7 +201,7 @@ case class InMemoryColumnarBatchRdd(
           nextRow
         }
 
-        override def hasNext = columnAccessors.head.hasNext
+        override def hasNext = columnAccessors.head.hasNext || iterator.hasNext
       }
     }
   }

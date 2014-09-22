@@ -30,6 +30,8 @@ private[spark] object SQLConf {
   val DEFAULT_SIZE_IN_BYTES = "spark.sql.defaultSizeInBytes"
   val SHUFFLE_PARTITIONS = "spark.sql.shuffle.partitions"
   val CODEGEN_ENABLED = "spark.sql.codegen"
+  val ROWBATCH_SIZE = "spark.sql.batchexec.batch.size"
+  val BATCH_CONVERT_ENABLED = "spark.sql.batchexec.plan.convert"
   val DIALECT = "spark.sql.dialect"
   val PARQUET_BINARY_AS_STRING = "spark.sql.parquet.binaryAsString"
   val PARQUET_CACHE_METADATA = "spark.sql.parquet.cacheMetadata"
@@ -93,6 +95,10 @@ trait SQLConf {
    * Defaults to false as this feature is currently experimental.
    */
   private[spark] def codegenEnabled: Boolean = getConf(CODEGEN_ENABLED, "false").toBoolean
+
+  private[spark] def rowBatchSize: Int = getConf(ROWBATCH_SIZE, "1000").toInt
+  private[spark] def batchConvertEnabled: Boolean =
+    getConf(BATCH_CONVERT_ENABLED, "true").toBoolean
 
   /**
    * Upper bound on the sizes (in bytes) of the tables qualified for the auto conversion to
