@@ -58,19 +58,22 @@ case class BatchAdd(left: BatchExpression, right: BatchExpression) extends Batch
   override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, _.plus(_, _))
 }
 
-case class BatchSubtract(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
+case class BatchSubtract(left: BatchExpression, right: BatchExpression)
+  extends BatchBinaryArithmetic {
   def symbol = "-"
 
   override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, _.minus(_, _))
 }
 
-case class BatchMultiply(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
+case class BatchMultiply(left: BatchExpression, right: BatchExpression)
+  extends BatchBinaryArithmetic {
   def symbol = "*"
 
   override def eval(input: RowBatch): EvaluatedType = n2b(input, left, right, _.times(_, _))
 }
 
-case class BatchDivide(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
+case class BatchDivide(left: BatchExpression, right: BatchExpression)
+  extends BatchBinaryArithmetic {
   def symbol = "/"
 
   override def eval(input: RowBatch): EvaluatedType = dataType match {
@@ -80,7 +83,8 @@ case class BatchDivide(left: BatchExpression, right: BatchExpression) extends Ba
 
 }
 
-case class BatchRemainder(left: BatchExpression, right: BatchExpression) extends BatchBinaryArithmetic {
+case class BatchRemainder(left: BatchExpression, right: BatchExpression)
+  extends BatchBinaryArithmetic {
   def symbol = "%"
 
   override def eval(input: RowBatch): EvaluatedType = i2b(input, left, right, _.rem(_, _))

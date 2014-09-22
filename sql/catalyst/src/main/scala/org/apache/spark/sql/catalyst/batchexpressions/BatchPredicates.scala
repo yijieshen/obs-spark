@@ -116,7 +116,8 @@ abstract class BinaryBatchComparison extends BinaryBatchPredicate {
  * @param left
  * @param right
  */
-case class BatchEquals(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
+case class BatchEquals(left: BatchExpression, right: BatchExpression)
+  extends BinaryBatchComparison {
   def symbol = "="
   override def eval(input: RowBatch): ColumnVector = {
 
@@ -212,22 +213,26 @@ case class BatchEquals(left: BatchExpression, right: BatchExpression) extends Bi
   }
 }
 
-case class BatchLessThan(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
+case class BatchLessThan(left: BatchExpression, right: BatchExpression)
+  extends BinaryBatchComparison {
   def symbol = "<"
   override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.lt(_, _))
 }
 
-case class BatchLessThanOrEqual(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
+case class BatchLessThanOrEqual(left: BatchExpression, right: BatchExpression)
+  extends BinaryBatchComparison {
   def symbol = "<="
   override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.lteq(_, _))
 }
 
-case class BatchGreaterThan(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
+case class BatchGreaterThan(left: BatchExpression, right: BatchExpression)
+  extends BinaryBatchComparison {
   def symbol = ">"
   override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.gt(_, _))
 }
 
-case class BatchGreaterThanOrEqual(left: BatchExpression, right: BatchExpression) extends BinaryBatchComparison {
+case class BatchGreaterThanOrEqual(left: BatchExpression, right: BatchExpression)
+  extends BinaryBatchComparison {
   def symbol = ">="
   override def eval(input: RowBatch): EvaluatedType = c2b(input, left, right, _.gteq(_, _))
 }
