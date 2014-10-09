@@ -29,7 +29,7 @@ object SYJT {
   cacheTable("t1")
 
   def main(args: Array[String]) {
-    val srdd = sql("SELECT c from t1 where a % 2 = 0")
+    val srdd = sql("SELECT c from t1 where a % 2 = 0 ")
     srdd.collect().foreach(println)
     println(
       s"""

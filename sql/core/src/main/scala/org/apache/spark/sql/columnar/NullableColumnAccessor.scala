@@ -55,5 +55,19 @@ private[sql] trait NullableColumnAccessor extends ColumnAccessor {
     pos += 1
   }
 
+  def nullable: Boolean = nullCount > 0
+
+  def currentIsNull: Boolean = {
+    if (pos == nextNullIndex) {
+      seenNulls += 1
+      if (seenNulls < nullCount) {
+        nextNullIndex = nullsBuffer.getInt()
+      }
+      true
+    } else {
+      false
+    }
+  }
+
   abstract override def hasNext = seenNulls < nullCount || super.hasNext
 }

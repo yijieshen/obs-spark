@@ -125,36 +125,21 @@ case class InMemoryColumnarBatchRdd(
       new Iterator[RowBatch] {
         var columnBuffers: Array[ByteBuffer] = null
         var columnAccessors: Seq[ColumnAccessor] = null
-        nextBatch()
-
-        val nextRow = new GenericMutableRow(columnAccessors.length)
 
         def nextBatch() = {
           columnBuffers = iterator.next()
           columnAccessors = requestedColumns.map(columnBuffers(_)).map(ColumnAccessor(_))
         }
 
-        override def hasNext = columnAccessors.head.hasNext || iterator.hasNext
+        override def hasNext = iterator.hasNext
 
         override def next(): RowBatch = {
+          nextBatch()
           cvs.foreach(_.reinit)
-          var rc = 0
-          val rowNum = nextRowBatch.rowNum
-          while ((columnAccessors.head.hasNext || iterator.hasNext) && rc < rowNum) {
-            if (!columnAccessors.head.hasNext) {
-              nextBatch()
-            }
-
-            var i = 0
-            while (i < nextRow.length) {
-              //TODO: Unnecessary tmp row, can we simplify this?
-              columnAccessors(i).extractTo(nextRow, i)
-              cvs(i).setNullable(rc, nextRow(i))
-              i += 1
-            }
-            rc += 1
-          }
-          nextRowBatch.curRowNum = rc
+          val rowCount = columnAccessors.zip(cvs).map {
+            case (ca, cv) => ca.fill(cv)
+          }.head
+          nextRowBatch.curRowNum = rowCount
           nextRowBatch
         }
       }

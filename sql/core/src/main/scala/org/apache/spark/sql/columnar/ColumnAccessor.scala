@@ -22,6 +22,7 @@ import java.nio.{ByteOrder, ByteBuffer}
 import org.apache.spark.sql.catalyst.types.{BinaryType, NativeType, DataType}
 import org.apache.spark.sql.catalyst.expressions.MutableRow
 import org.apache.spark.sql.columnar.compression.CompressibleColumnAccessor
+import org.apache.spark.sql.catalyst.batchexpressions._
 
 /**
  * An `Iterator` like trait used to extract values from columnar byte buffer. When a value is
@@ -39,6 +40,8 @@ private[sql] trait ColumnAccessor {
   def extractTo(row: MutableRow, ordinal: Int)
 
   protected def underlyingBuffer: ByteBuffer
+
+  def fill(cv: ColumnVector): Int = ???
 }
 
 private[sql] abstract class BasicColumnAccessor[T <: DataType, JvmType](
@@ -67,39 +70,250 @@ private[sql] abstract class NativeColumnAccessor[T <: NativeType](
   with CompressibleColumnAccessor[T]
 
 private[sql] class BooleanColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, BOOLEAN)
+  extends NativeColumnAccessor(buffer, BOOLEAN) {
+  override def fill(cv: ColumnVector): Int = {
+    val bcv: BooleanColumnVector = cv.asInstanceOf[BooleanColumnVector]
+
+    if(nullable) {
+      bcv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          bcv.notNullArray.set(i, false)
+        } else {
+          bcv.setBoolean(i, extractSingle(buffer))
+        }
+      } else {
+        bcv.setBoolean(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class IntColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, INT)
+  extends NativeColumnAccessor(buffer, INT) {
+  override def fill(cv: ColumnVector): Int = {
+    val icv: IntColumnVector = cv.asInstanceOf[IntColumnVector]
+
+    if(nullable) {
+      icv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          icv.notNullArray.set(i, false)
+        } else {
+          icv.setInt(i, extractSingle(buffer))
+        }
+      } else {
+        icv.setInt(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class ShortColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, SHORT)
+  extends NativeColumnAccessor(buffer, SHORT) {
+  override def fill(cv: ColumnVector): Int = {
+    val scv: ShortColumnVector = cv.asInstanceOf[ShortColumnVector]
+
+    if(nullable) {
+      scv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          scv.notNullArray.set(i, false)
+        } else {
+          scv.setShort(i, extractSingle(buffer))
+        }
+      } else {
+        scv.setShort(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class LongColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, LONG)
+  extends NativeColumnAccessor(buffer, LONG) {
+  override def fill(cv: ColumnVector): Int = {
+    val lcv: LongColumnVector = cv.asInstanceOf[LongColumnVector]
+
+    if(nullable) {
+      lcv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          lcv.notNullArray.set(i, false)
+        } else {
+          lcv.setLong(i, extractSingle(buffer))
+        }
+      } else {
+        lcv.setLong(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class ByteColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, BYTE)
+  extends NativeColumnAccessor(buffer, BYTE) {
+  override def fill(cv: ColumnVector): Int = {
+    val bcv: ByteColumnVector = cv.asInstanceOf[ByteColumnVector]
+
+    if(nullable) {
+      bcv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          bcv.notNullArray.set(i, false)
+        } else {
+          bcv.setByte(i, extractSingle(buffer))
+        }
+      } else {
+        bcv.setByte(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class DoubleColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, DOUBLE)
+  extends NativeColumnAccessor(buffer, DOUBLE) {
+  override def fill(cv: ColumnVector): Int = {
+    val dcv: DoubleColumnVector = cv.asInstanceOf[DoubleColumnVector]
+
+    if(nullable) {
+      dcv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          dcv.notNullArray.set(i, false)
+        } else {
+          dcv.setDouble(i, extractSingle(buffer))
+        }
+      } else {
+        dcv.setDouble(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class FloatColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, FLOAT)
+  extends NativeColumnAccessor(buffer, FLOAT) {
+  override def fill(cv: ColumnVector): Int = {
+    val fcv: FloatColumnVector = cv.asInstanceOf[FloatColumnVector]
+
+    if(nullable) {
+      fcv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          fcv.notNullArray.set(i, false)
+        } else {
+          fcv.setFloat(i, extractSingle(buffer))
+        }
+      } else {
+        fcv.setFloat(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class StringColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, STRING)
+  extends NativeColumnAccessor(buffer, STRING) {
+  override def fill(cv: ColumnVector): Int = {
+    val scv: StringColumnVector = cv.asInstanceOf[StringColumnVector]
+
+    if(nullable) {
+      scv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          scv.notNullArray.set(i, false)
+        } else {
+          scv.setString(i, extractSingle(buffer))
+        }
+      } else {
+        scv.setString(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class TimestampColumnAccessor(buffer: ByteBuffer)
-  extends NativeColumnAccessor(buffer, TIMESTAMP)
+  extends NativeColumnAccessor(buffer, TIMESTAMP) {
+  override def fill(cv: ColumnVector): Int = ???
+}
 
 private[sql] class BinaryColumnAccessor(buffer: ByteBuffer)
   extends BasicColumnAccessor[BinaryType.type, Array[Byte]](buffer, BINARY)
-  with NullableColumnAccessor
+  with NullableColumnAccessor {
+  override def fill(cv: ColumnVector): Int = {
+    val bcv: BinaryColumnVector = cv.asInstanceOf[BinaryColumnVector]
+
+    if(nullable) {
+      bcv.notNullArray = (new BitSet(cv.rowNum)).complement
+    }
+
+    var i = 0
+    while (hasNext) {
+      if(nullable) {
+        if(currentIsNull) {
+          bcv.notNullArray.set(i, false)
+        } else {
+          bcv.set(i, extractSingle(buffer))
+        }
+      } else {
+        bcv.set(i, extractSingle(buffer))
+      }
+      i += 1
+    }
+    i
+  }
+}
 
 private[sql] class GenericColumnAccessor(buffer: ByteBuffer)
   extends BasicColumnAccessor[DataType, Array[Byte]](buffer, GENERIC)
-  with NullableColumnAccessor
+  with NullableColumnAccessor {
+  override def fill(cv: ColumnVector): Int = ???
+}
 
 private[sql] object ColumnAccessor {
   def apply(buffer: ByteBuffer): ColumnAccessor = {
