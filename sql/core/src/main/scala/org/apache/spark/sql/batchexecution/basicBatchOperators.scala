@@ -22,7 +22,7 @@ import java.nio.ByteBuffer
 import org.apache.spark.annotation.DeveloperApi
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.batchexpressions._
-import org.apache.spark.sql.catalyst.batchexpressions.codegen.{GenerateBatchPredicate, GenerateBatchMutableProjection}
+import org.apache.spark.sql.catalyst.batchexpressions.codegen._
 import org.apache.spark.sql.catalyst.expressions.Row
 import org.apache.spark.sql.catalyst.expressions._
 import org.apache.spark.sql.columnar.{ColumnAccessor, InMemoryRelation}
@@ -35,7 +35,7 @@ case class BatchProject(projectList: Seq[NamedExpression], child: SparkBatchPlan
   extends UnaryBatchNode {
   override def output = projectList.map(_.toAttribute)
 
-  @transient lazy val buildProjection = GenerateBatchMutableProjection(projectList, child.output)
+  @transient lazy val buildProjection = NewGenerateBatchMutableProjection(projectList, child.output)
 
   override def batchExecute() = child.batchExecute().mapPartitions { iter =>
     val projection = buildProjection()
