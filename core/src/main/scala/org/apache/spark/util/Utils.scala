@@ -1200,6 +1200,12 @@ private[spark] object Utils extends Logging {
     count
   }
 
+  def consumeIterator[T](iterator: Iterator[T]): Unit = {
+    while (iterator.hasNext) {
+      iterator.next()
+    }
+  }
+
   /**
    * Creates a symlink. Note jdk1.7 has Files.createSymbolicLink but not used here
    * for jdk1.6 support.  Supports windows by doing copy, everything else uses "ln -sf".

@@ -907,6 +907,8 @@ abstract class RDD[T: ClassTag](
    */
   def count(): Long = sc.runJob(this, Utils.getIteratorSize _).sum
 
+  def justDoIt(): Unit = sc.runJob(this, Utils.consumeIterator _)
+
   /**
    * :: Experimental ::
    * Approximate version of count() that returns a potentially incomplete result
