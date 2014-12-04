@@ -39,7 +39,7 @@ case class Project(projectList: Seq[NamedExpression], child: SparkPlan) extends 
 
   @transient lazy val buildProjection = newMutableProjection(projectList, child.output)
 
-  def execute() = child.execute().mapPartitions { iter =>
+  def execute() = child.execute().mapPartitions("project representation placeholder") { iter =>
     val resuableProjection = buildProjection()
     iter.map(resuableProjection)
   }

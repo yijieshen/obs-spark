@@ -24,7 +24,7 @@ import org.apache.spark.{Partition, TaskContext}
 private[spark] class MapPartitionsRDD[U: ClassTag, T: ClassTag](
     prev: RDD[T],
     f: (TaskContext, Int, Iterator[T]) => Iterator[U],  // (TaskContext, partition index, iterator)
-    preservesPartitioning: Boolean = false)
+    preservesPartitioning: Boolean = false, sqlOperatorDescription: String = null)
   extends RDD[U](prev) {
 
   override val partitioner = if (preservesPartitioning) firstParent[T].partitioner else None
@@ -33,4 +33,6 @@ private[spark] class MapPartitionsRDD[U: ClassTag, T: ClassTag](
 
   override def compute(split: Partition, context: TaskContext) =
     f(context, split.index, firstParent[T].iterator(split, context))
+
+  override def getOpDesc = sqlOperatorDescription
 }

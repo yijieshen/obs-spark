@@ -127,6 +127,8 @@ abstract class RDD[T: ClassTag](
   /** A friendly name for this RDD */
   @transient var name: String = null
 
+  def getOpDesc: String = null
+
   /** Assign a name to this RDD */
   def setName(_name: String): this.type = {
     name = _name
@@ -598,6 +600,12 @@ abstract class RDD[T: ClassTag](
       f: Iterator[T] => Iterator[U], preservesPartitioning: Boolean = false): RDD[U] = {
     val func = (context: TaskContext, index: Int, iter: Iterator[T]) => f(iter)
     new MapPartitionsRDD(this, sc.clean(func), preservesPartitioning)
+  }
+
+  def mapPartitions[U: ClassTag](opDesc: String)(
+      f: Iterator[T] => Iterator[U], preservesPartitioning: Boolean = false): RDD[U] = {
+    val func = (context: TaskContext, index: Int, iter: Iterator[T]) => f(iter)
+    new MapPartitionsRDD(this, sc.clean(func), preservesPartitioning, opDesc)
   }
 
   /**
