@@ -28,7 +28,6 @@ import com.google.common.base.Optional
 import org.apache.hadoop.io.compress.CompressionCodec
 
 import org.apache.spark._
-import org.apache.spark.SparkContext._
 import org.apache.spark.annotation.Experimental
 import org.apache.spark.api.java.JavaPairRDD._
 import org.apache.spark.api.java.JavaSparkContext.fakeClassTag
@@ -493,9 +492,9 @@ trait JavaRDDLike[T, This <: JavaRDDLike[T, This]] extends Serializable {
   }
 
   /**
-   * Returns the top K elements from this RDD as defined by
+   * Returns the top k (largest) elements from this RDD as defined by
    * the specified Comparator[T].
-   * @param num the number of top elements to return
+   * @param num k, the number of top elements to return
    * @param comp the comparator that defines the order
    * @return an array of top elements
    */
@@ -507,9 +506,9 @@ trait JavaRDDLike[T, This <: JavaRDDLike[T, This]] extends Serializable {
   }
 
   /**
-   * Returns the top K elements from this RDD using the
+   * Returns the top k (largest) elements from this RDD using the
    * natural ordering for T.
-   * @param num the number of top elements to return
+   * @param num k, the number of top elements to return
    * @return an array of top elements
    */
   def top(num: Int): JList[T] = {
@@ -518,9 +517,9 @@ trait JavaRDDLike[T, This <: JavaRDDLike[T, This]] extends Serializable {
   }
 
   /**
-   * Returns the first K elements from this RDD as defined by
+   * Returns the first k (smallest) elements from this RDD as defined by
    * the specified Comparator[T] and maintains the order.
-   * @param num the number of top elements to return
+   * @param num k, the number of elements to return
    * @param comp the comparator that defines the order
    * @return an array of top elements
    */
@@ -552,9 +551,9 @@ trait JavaRDDLike[T, This <: JavaRDDLike[T, This]] extends Serializable {
   }
 
   /**
-   * Returns the first K elements from this RDD using the
+   * Returns the first k (smallest) elements from this RDD using the
    * natural ordering for T while maintain the order.
-   * @param num the number of top elements to return
+   * @param num k, the number of top elements to return
    * @return an array of top elements
    */
   def takeOrdered(num: Int): JList[T] = {

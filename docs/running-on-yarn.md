@@ -4,7 +4,7 @@ title: Running Spark on YARN
 ---
 
 Support for running on [YARN (Hadoop
-NextGen)](http://hadoop.apache.org/docs/r2.0.2-alpha/hadoop-yarn/hadoop-yarn-site/YARN.html)
+NextGen)](http://hadoop.apache.org/docs/stable/hadoop-yarn/hadoop-yarn-site/YARN.html)
 was added to Spark in version 0.6.0, and improved in subsequent releases.
 
 # Preparations
@@ -30,7 +30,7 @@ Most of the configs are the same for Spark on YARN as for other deployment modes
 </tr>
 <tr>
   <td><code>spark.yarn.submit.file.replication</code></td>
-  <td>3</td>
+  <td>The default HDFS replication (usually 3)</td>
   <td>
     HDFS replication level for the files uploaded into HDFS for the application. These include things like the Spark jar, the app jar, and any distributed cache files/archives.
   </td>
@@ -39,7 +39,7 @@ Most of the configs are the same for Spark on YARN as for other deployment modes
   <td><code>spark.yarn.preserve.staging.files</code></td>
   <td>false</td>
   <td>
-    Set to true to preserve the staged files (Spark jar, app jar, distributed cache files) at the end of the job rather then delete them.
+    Set to true to preserve the staged files (Spark jar, app jar, distributed cache files) at the end of the job rather than delete them.
   </td>
 </tr>
 <tr>
@@ -92,6 +92,13 @@ Most of the configs are the same for Spark on YARN as for other deployment modes
   </td>
 </tr>
 <tr>
+  <td><code>spark.yarn.queue</code></td>
+  <td>default</td>
+  <td>
+    The name of the YARN queue to which the application is submitted.
+  </td>
+</tr>
+<tr>
   <td><code>spark.yarn.jar</code></td>
   <td>(none)</td>
   <td>
@@ -132,6 +139,21 @@ Most of the configs are the same for Spark on YARN as for other deployment modes
     The maximum number of threads to use in the application master for launching executor containers.
   </td>
 </tr>
+<tr>
+  <td><code>spark.yarn.datanucleus.dir</code></td>
+  <td>$SPARK_HOME/lib</td>
+  <td>
+     The location of the DataNucleus jars, in case overriding the default location is desired.
+     By default, Spark on YARN will use the DataNucleus jars installed at
+     <code>$SPARK_HOME/lib</code>, but the jars can also be in a world-readable location on HDFS.
+     This allows YARN to cache it on nodes so that it doesn't need to be distributed each time an
+     application runs. To point to a directory on HDFS, for example, set this configuration to
+     "hdfs:///some/path".
+
+     This is required because the datanucleus jars cannot be packaged into the
+     assembly jar due to metadata conflicts (involving <code>plugin.xml</code>.)
+  </td>
+</tr>
 </table>
 
 # Launching Spark on YARN
@@ -159,7 +181,7 @@ For example:
         lib/spark-examples*.jar \
         10
 
-The above starts a YARN client program which starts the default Application Master. Then SparkPi will be run as a child thread of Application Master. The client will periodically poll the Application Master for status updates and display them in the console. The client will exit once your application has finished running.  Refer to the "Viewing Logs" section below for how to see driver and executor logs.
+The above starts a YARN client program which starts the default Application Master. Then SparkPi will be run as a child thread of Application Master. The client will periodically poll the Application Master for status updates and display them in the console. The client will exit once your application has finished running.  Refer to the "Debugging your Application" section below for how to see driver and executor logs.
 
 To launch a Spark application in yarn-client mode, do the same, but replace "yarn-cluster" with "yarn-client".  To run spark-shell:
 
@@ -181,7 +203,7 @@ In YARN terminology, executors and application masters run inside "containers". 
 
     yarn logs -applicationId <app ID>
     
-will print out the contents of all log files from all containers from the given application.
+will print out the contents of all log files from all containers from the given application. You can also view the container log files directly in HDFS using the HDFS shell or API. The directory where they are located can be found by looking at your YARN configs (`yarn.nodemanager.remote-app-log-dir` and `yarn.nodemanager.remote-app-log-dir-suffix`).
 
 When log aggregation isn't turned on, logs are retained locally on each machine under `YARN_APP_LOGS_DIR`, which is usually configured to `/tmp/logs` or `$HADOOP_HOME/logs/userlogs` depending on the Hadoop version and installation. Viewing logs for a container requires going to the host that contains them and looking in this directory.  Subdirectories organize log files by application ID and container ID.
 

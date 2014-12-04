@@ -18,6 +18,7 @@
 package org.apache.spark.deploy.yarn
 
 import java.net.{InetAddress, UnknownHostException, URI, URISyntaxException}
+import java.io.{File, FilenameFilter}
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable.{HashMap, ListBuffer, Map}
@@ -39,6 +40,7 @@ import org.apache.hadoop.yarn.conf.YarnConfiguration
 import org.apache.hadoop.yarn.util.Records
 
 import org.apache.spark.{Logging, SecurityManager, SparkConf, SparkContext, SparkException}
+import org.apache.spark.util.Utils
 
 /**
  * The entry point (starting in Client#main() and Client#run()) for launching Spark on YARN.
@@ -55,6 +57,7 @@ private[spark] trait ClientBase extends Logging {
   protected val amMemoryOverhead = args.amMemoryOverhead // MB
   protected val executorMemoryOverhead = args.executorMemoryOverhead // MB
   private val distCacheMgr = new ClientDistributedCacheManager()
+  private val isLaunchingDriver = args.userClass != null
 
   /**
    * Fail fast if we have requested more resources per container than is available in the cluster.
@@ -221,8 +224,49 @@ private[spark] trait ClientBase extends Logging {
         }
       }
     }
+
     if (cachedSecondaryJarLinks.nonEmpty) {
       sparkConf.set(CONF_SPARK_YARN_SECONDARY_JARS, cachedSecondaryJarLinks.mkString(","))
+    }
+
+    /**
+     * Do the same for datanucleus jars, if they exist in spark home. Find all datanucleus-* jars,
+     * copy them to the remote fs, and add them to the class path.
+     *
+     * This is necessary because the datanucleus jars cannot be included in the assembly jar due
+     * to metadata conflicts involving plugin.xml. At the time of writing, these are the only
+     * jars that cannot be distributed with the uber jar and have to be treated differently.
+     *
+     * For more details, see SPARK-2624, and https://github.com/apache/spark/pull/3238
+     */
+    for (libsDir <- dataNucleusJarsDir(sparkConf)) {
+      val libsURI = new URI(libsDir)
+      val jarLinks = ListBuffer.empty[String]
+      if (libsURI.getScheme != LOCAL_SCHEME) {
+        val localPath = getQualifiedLocalPath(libsURI)
+        val localFs = FileSystem.get(localPath.toUri, hadoopConf)
+        if (localFs.exists(localPath)) {
+          val jars = localFs.listFiles(localPath, /* recursive */ false)
+          while (jars.hasNext) {
+            val jar = jars.next()
+            val name = jar.getPath.getName
+            if (name.startsWith("datanucleus-")) {
+              // copy to remote and add to classpath
+              val src = jar.getPath
+              val destPath = copyFileToRemote(dst, src, replication)
+              distCacheMgr.addResource(localFs, hadoopConf, destPath,
+                localResources, LocalResourceType.FILE, name, statCache)
+              jarLinks += name
+            }
+          }
+        }
+      } else {
+        jarLinks += libsURI.toString + Path.SEPARATOR + "*"
+      }
+
+      if (jarLinks.nonEmpty) {
+        sparkConf.set(CONF_SPARK_DATANUCLEUS_JARS, jarLinks.mkString(","))
+      }
     }
 
     localResources
@@ -267,7 +311,6 @@ private[spark] trait ClientBase extends Logging {
     // Note that to warn the user about the deprecation in cluster mode, some code from
     // SparkConf#validateSettings() is duplicated here (to avoid triggering the condition
     // described above).
-    val isLaunchingDriver = args.userClass != null
     if (isLaunchingDriver) {
       sys.env.get("SPARK_JAVA_OPTS").foreach { value =>
         val warning =
@@ -312,6 +355,10 @@ private[spark] trait ClientBase extends Logging {
 
     val javaOpts = ListBuffer[String]()
 
+    // Set the environment variable through a command prefix
+    // to append to the existing value of the variable
+    var prefixEnv: Option[String] = None
+
     // Add Xmx for AM memory
     javaOpts += "-Xmx" + args.amMemory + "m"
 
@@ -344,20 +391,22 @@ private[spark] trait ClientBase extends Logging {
     }
 
     // Include driver-specific java options if we are launching a driver
-    val isLaunchingDriver = args.userClass != null
     if (isLaunchingDriver) {
       sparkConf.getOption("spark.driver.extraJavaOptions")
         .orElse(sys.env.get("SPARK_JAVA_OPTS"))
         .foreach(opts => javaOpts += opts)
-      sparkConf.getOption("spark.driver.libraryPath")
-        .foreach(p => javaOpts += s"-Djava.library.path=$p")
+      val libraryPaths = Seq(sys.props.get("spark.driver.extraLibraryPath"),
+        sys.props.get("spark.driver.libraryPath")).flatten
+      if (libraryPaths.nonEmpty) {
+        prefixEnv = Some(Utils.libraryPathEnvPrefix(libraryPaths))
+      }
     }
 
     // For log4j configuration to reference
     javaOpts += ("-Dspark.yarn.app.container.log.dir=" + ApplicationConstants.LOG_DIR_EXPANSION_VAR)
 
     val userClass =
-      if (args.userClass != null) {
+      if (isLaunchingDriver) {
         Seq("--class", YarnSparkHadoopUtil.escapeForShell(args.userClass))
       } else {
         Nil
@@ -380,12 +429,12 @@ private[spark] trait ClientBase extends Logging {
     val amArgs =
       Seq(amClass) ++ userClass ++ userJar ++ userArgs ++
       Seq(
-        "--executor-memory", args.executorMemory.toString,
+        "--executor-memory", args.executorMemory.toString + "m",
         "--executor-cores", args.executorCores.toString,
         "--num-executors ", args.numExecutors.toString)
 
     // Command for the ApplicationMaster
-    val commands = Seq(Environment.JAVA_HOME.$() + "/bin/java", "-server") ++
+    val commands = prefixEnv ++ Seq(Environment.JAVA_HOME.$() + "/bin/java", "-server") ++
       javaOpts ++ amArgs ++
       Seq(
         "1>", ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout",
@@ -417,17 +466,19 @@ private[spark] trait ClientBase extends Logging {
 
   /**
    * Report the state of an application until it has exited, either successfully or
-   * due to some failure, then return the application state.
+   * due to some failure, then return a pair of the yarn application state (FINISHED, FAILED,
+   * KILLED, or RUNNING) and the final application state (UNDEFINED, SUCCEEDED, FAILED,
+   * or KILLED).
    *
    * @param appId ID of the application to monitor.
    * @param returnOnRunning Whether to also return the application state when it is RUNNING.
    * @param logApplicationReport Whether to log details of the application report every iteration.
-   * @return state of the application, one of FINISHED, FAILED, KILLED, and RUNNING.
+   * @return A pair of the yarn application state and the final application state.
    */
   def monitorApplication(
       appId: ApplicationId,
       returnOnRunning: Boolean = false,
-      logApplicationReport: Boolean = true): YarnApplicationState = {
+      logApplicationReport: Boolean = true): (YarnApplicationState, FinalApplicationStatus) = {
     val interval = sparkConf.getLong("spark.yarn.report.interval", 1000)
     var lastState: YarnApplicationState = null
     while (true) {
@@ -468,11 +519,11 @@ private[spark] trait ClientBase extends Logging {
       if (state == YarnApplicationState.FINISHED ||
         state == YarnApplicationState.FAILED ||
         state == YarnApplicationState.KILLED) {
-        return state
+        return (state, report.getFinalApplicationStatus)
       }
 
       if (returnOnRunning && state == YarnApplicationState.RUNNING) {
-        return state
+        return (state, report.getFinalApplicationStatus)
       }
 
       lastState = state
@@ -485,8 +536,23 @@ private[spark] trait ClientBase extends Logging {
   /**
    * Submit an application to the ResourceManager and monitor its state.
    * This continues until the application has exited for any reason.
+   * If the application finishes with a failed, killed, or undefined status,
+   * throw an appropriate SparkException.
    */
-  def run(): Unit = monitorApplication(submitApplication())
+  def run(): Unit = {
+    val (yarnApplicationState, finalApplicationStatus) = monitorApplication(submitApplication())
+    if (yarnApplicationState == YarnApplicationState.FAILED ||
+      finalApplicationStatus == FinalApplicationStatus.FAILED) {
+      throw new SparkException("Application finished with failed status")
+    }
+    if (yarnApplicationState == YarnApplicationState.KILLED ||
+      finalApplicationStatus == FinalApplicationStatus.KILLED) {
+      throw new SparkException("Application is killed")
+    }
+    if (finalApplicationStatus == FinalApplicationStatus.UNDEFINED) {
+      throw new SparkException("The final status of application is undefined")
+    }
+  }
 
   /* --------------------------------------------------------------------------------------- *
    |  Methods that cannot be implemented here due to API differences across hadoop versions  |
@@ -527,6 +593,13 @@ private[spark] object ClientBase extends Logging {
   // Internal config to propagate the location of the user's jar to the driver/executors
   val CONF_SPARK_USER_JAR = "spark.yarn.user.jar"
 
+  // Location of the datanucleus jars
+  val CONF_SPARK_DATANUCLEUS_DIR = "spark.yarn.datanucleus.dir"
+
+  // Internal config to propagate the locations of datanucleus jars found to add to the
+  // classpath of the executors. Value should be a comma-separated list of paths to each jar.
+  val CONF_SPARK_DATANUCLEUS_JARS = "spark.yarn.datanucleus.jars"
+
   // Internal config to propagate the locations of any extra jars to add to the classpath
   // of the executors
   val CONF_SPARK_YARN_SECONDARY_JARS = "spark.yarn.secondary.jars"
@@ -556,6 +629,19 @@ private[spark] object ClientBase extends Logging {
       System.getenv(ENV_SPARK_JAR)
     } else {
       SparkContext.jarOfClass(this.getClass).head
+    }
+  }
+
+  /**
+   * Find the user-defined provided jars directory if configured, or return SPARK_HOME/lib if not.
+   *
+   * This method first looks for $CONF_SPARK_DATANUCLEUS_DIR inside the SparkConf, then looks for
+   * Spark home inside the the SparkConf and the user environment.
+   */
+  private def dataNucleusJarsDir(conf: SparkConf): Option[String] = {
+    conf.getOption(CONF_SPARK_DATANUCLEUS_DIR).orElse {
+      val sparkHome = conf.getOption("spark.home").orElse(sys.env.get("SPARK_HOME"))
+      sparkHome.map(path => path + Path.SEPARATOR + "lib")
     }
   }
 
@@ -658,6 +744,13 @@ private[spark] object ClientBase extends Logging {
       addFileToClasspath(sparkJar(sparkConf), SPARK_JAR, env)
       populateHadoopClasspath(conf, env)
       addUserClasspath(args, sparkConf, env)
+    }
+
+    // Add datanucleus jars to classpath
+    for (entries <- sparkConf.getOption(CONF_SPARK_DATANUCLEUS_JARS)) {
+      entries.split(",").filter(_.nonEmpty).foreach { entry =>
+        addFileToClasspath(entry, null, env)
+      }
     }
 
     // Append all jar files under the working directory to the classpath.
