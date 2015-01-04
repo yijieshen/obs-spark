@@ -18,7 +18,6 @@
 package org.apache.spark.sql.catalyst.batchexpressions.codegen
 
 import org.apache.spark.sql.catalyst.batchexpressions.RBProjection
-import org.apache.spark.sql.catalyst.expressions
 import org.apache.spark.sql.catalyst.expressions._
 
 object NewGenerateBatchMutableProjection
@@ -27,8 +26,6 @@ object NewGenerateBatchMutableProjection
   import scala.reflect.runtime.{universe => ru}
   import scala.reflect.runtime.universe._
 
-  val outputRowBatch = newTermName(s"output")
-
   override protected def canonicalize(in: Seq[Expression]): Seq[Expression] =
     in.map(ExpressionCanonicalizer(_))
 
@@ -36,46 +33,7 @@ object NewGenerateBatchMutableProjection
     in.map(BindReferences.bindReference(_, inputSchema))
 
   override protected def create(expressions: Seq[Expression]): (() => RBProjection) = {
-    val projectionCode = expressions.zipWithIndex.flatMap { case(e, index) =>
-      val eval = expressionEvaluator(e)
-
-      val setter = mutatorForType(e.dataType)
-
-      val cvResult = freshName("cvresult")
-      val notNullArrayTerm = freshName("notNullArrayTerm")
-      val selector = freshName("selector")
-      val bitmap = freshName("bitmap")
-      val bmIter = freshName("bmIter")
-      val rowNum = freshName("curRowNum")
-      val resultDt = reify(e.dataType)
-
-      eval.prepareCode ++
-      q"""
-        val $cvResult = $columnVectorObj.apply($resultDt, input.curRowNum)
-        val $notNullArrayTerm = ${eval.notNullArrayTerm}
-        val $selector = input.curSelector
-        val $bitmap = ${andWithNull(notNullArrayTerm, selector, false)}
-
-        if ($bitmap != null) {
-          $bitmap.availableBits = input.curRowNum
-          val $bmIter = $bitmap.iterator
-          var i = 0
-          while ($bmIter.hasNext) {
-            i = $bmIter.next()
-            $cvResult.$setter(i, ${eval.calculationCode})
-          }
-        } else {
-          val $rowNum = input.curRowNum
-          var i = 0
-          while (i < $rowNum) {
-            $cvResult.$setter(i, ${eval.calculationCode})
-            i += 1
-          }
-        }
-        $cvResult.notNullArray = $notNullArrayTerm
-        ${setCV(outputRowBatch, index, cvResult)}
-      """.children
-    }
+    val pCode = projectionCode(expressions)
 
     val code =
       q"""
@@ -86,7 +44,7 @@ object NewGenerateBatchMutableProjection
               if($outputRowBatch == null) {
                 $outputRowBatch = new $rowBatchType(input.rowNum, ${expressions.size})
               }
-              ..$projectionCode
+              ..$pCode
               output.curRowNum = input.curRowNum
               output.curSelector = input.curSelector
               output

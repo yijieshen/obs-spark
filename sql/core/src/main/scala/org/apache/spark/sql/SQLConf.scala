@@ -98,7 +98,7 @@ trait SQLConf {
 
   private[spark] def rowBatchSize: Int = getConf(ROWBATCH_SIZE, "1000").toInt
   private[spark] def batchConvertEnabled: Boolean =
-    getConf(BATCH_CONVERT_ENABLED, "true").toBoolean
+    getConf(BATCH_CONVERT_ENABLED, "false").toBoolean
 
   /**
    * Upper bound on the sizes (in bytes) of the tables qualified for the auto conversion to

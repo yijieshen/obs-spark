@@ -21,4 +21,10 @@ package object batchexpressions {
 
   abstract class RBProjection extends (RowBatch => RowBatch)
 
+  abstract class AggregateBufferPrepare extends
+    ((RowBatch, ByteArrayMap) => BinaryColumnVector)
+
+  abstract class AggregateBufferUpdate extends
+    ((RowBatch, BinaryColumnVector) => Unit)
+
 }

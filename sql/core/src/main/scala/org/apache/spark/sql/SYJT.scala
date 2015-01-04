@@ -23,13 +23,14 @@ import org.apache.spark.sql.test._
 case class SYJT(key: String, a: Int, b: Double, c: Int)
 
 object SYJT {
-  val t1: SchemaRDD = createSchemaRDD(TestSQLContext.sparkContext.parallelize(
-    (1 to 100).map(i => SYJT(s"val_$i", i + 100, i + 200, i + 300))))
-  registerRDDAsTable(t1, "t1")
-  cacheTable("t1")
+
+  val t1: SchemaRDD = TestSQLContext.sparkContext.parallelize(
+    (1 to 100).map(i => SYJT(s"val_$i", i + 100, i + 200, i + 300)))
+  t1.registerTempTable("t1")
+  //TestSQLContext.cacheTable("t1")
 
   def main(args: Array[String]) {
-    val srdd = sql("SELECT a, b, a+c*b*a from t1")
+    val srdd = sql("SELECT a, b, avg(a+c*b*a) from t1 group by a, b")
     srdd.collect().foreach(println)
     println(
       s"""

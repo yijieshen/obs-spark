@@ -17,6 +17,8 @@
 
 package org.apache.spark.sql.catalyst.batchexpressions.codegen
 
+import java.nio.ByteBuffer
+
 import com.google.common.cache.{CacheLoader, CacheBuilder}
 
 import org.apache.spark.Logging
@@ -35,13 +37,20 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
 
   protected val rowBatchType = typeOf[RowBatch]
   protected val rbProjectionType = typeOf[RBProjection]
+  protected val abPrepareType = typeOf[AggregateBufferPrepare]
 
   protected val doubleLiteralType = typeOf[DoubleLiteral]
   protected val longLiteralType = typeOf[LongLiteral]
   protected val intLiteralType = typeOf[IntLiteral]
   protected val stringLiteralType = typeOf[StringLiteral]
   protected val booleanLiteralType = typeOf[BooleanLiteral]
+  protected val binaryColumnVectorType = typeOf[BinaryColumnVector]
 
+  protected val byteBufferType = typeOf[ByteBuffer]
+  protected val byteArrayMapType = typeOf[ByteArrayMap]
+
+  protected val outputRowBatch = newTermName(s"output")
+  protected val outputBinaryCV = newTermName(s"outputBCV")
 
   protected val columnVectorObj = reify(ColumnVector)
 
@@ -152,6 +161,47 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
       }
     }
 
+    implicit class EvaluateN(expressions: Seq[Expression]) {
+      def cancat(): (Seq[Tree], Tree) = {
+        //TODO: Handle null case in cancatenation
+        val evals = expressions.map(expressionEvaluator)
+
+        val nnas = evals.map(_.notNullArrayTerm)
+        val nna = q"val $notNullArrayTerm = null"
+
+        val prepareCode = evals.flatMap(_.prepareCode) :+ nna
+
+        val exprWithCalCode = expressions.zip(evals.map(_.calculationCode))
+        val calculationSeq = exprWithCalCode.map(a=> append(a._1, a._2))
+        val calculationCode = q"..$calculationSeq"
+        (prepareCode, calculationCode)
+      }
+
+      def append(expr: Expression, calCode: Tree) = {
+        expr.dataType match {
+          case StringType =>
+            val bytes = freshName("stringBytes")
+            q"""
+              val $bytes = $calCode.getBytes
+              buffer.putInt($bytes.length).put($bytes, 0, $bytes.length)
+            """
+          case IntegerType =>
+            q"buffer.putInt($calCode)"
+          case ShortType =>
+            q"buffer.putShort($calCode)"
+          case ByteType =>
+            q"buffer.put($calCode)"
+          case LongType =>
+            q"buffer.put($calCode)"
+          case FloatType =>
+            q"buffer.putFloat($calCode)"
+          case DoubleType =>
+            q"buffer.putDouble($calCode)"
+        }
+      }
+
+    }
+
     val primitiveEvaluation: PartialFunction[Expression, (Seq[Tree], Tree)] = {
 
       case b@BoundReference(ordinal, dataType, nullable) =>
@@ -242,6 +292,9 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
         (e1, e2).evaluateAs(BooleanType) { (v1, v2) => q"$v1 < $v2"}
       case LessThanOrEqual(e1@NumericType(), e2@NumericType()) =>
         (e1, e2).evaluateAs(BooleanType) { (v1, v2) => q"$v1 <= $v2"}
+
+      case Concat(exprs) =>
+        EvaluateN(exprs).cancat
     }
 
     val (prepareCode, calculationCode) =
@@ -249,6 +302,103 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
 
     EvaluatedExpression(prepareCode, calculationCode, notNullArrayTerm)
   }
+
+  def projectionCode(expressions: Seq[Expression]) = {
+    expressions.zipWithIndex.flatMap { case (e, index) =>
+      e match {
+        //BoundReference as a single Expression, just copy reference
+        case BoundReference(ordinal, dataType, nullable) =>
+          val inputCV = freshName("inputCV")
+          val inputRowBatch = newTermName(s"input")
+          q"""
+              val $inputCV = ${getCV(inputRowBatch, ordinal)}.asInstanceOf[${getCVType(dataType)}]
+              ${setCV(outputRowBatch, index, inputCV)}
+            """.children
+
+        case c @ Concat(children) =>
+          val eval = expressionEvaluator(c)
+
+          val cvResult = freshName("cvresult")
+          val notNullArrayTerm = freshName("notNullArrayTerm")
+          val selector = freshName("selector")
+          val bitmap = freshName("bitmap")
+          val bmIter = freshName("bmIter")
+          val rowNum = freshName("curRowNum")
+
+          eval.prepareCode ++
+            q"""
+              val $cvResult = new $binaryColumnVectorType(input.curRowNum)
+              val $notNullArrayTerm = ${eval.notNullArrayTerm}
+              val $selector = input.curSelector
+              val $bitmap = ${andWithNull(notNullArrayTerm, selector, false)}
+              val buffer = $byteBufferType.allocate(10)
+
+               if ($bitmap != null) {
+                $bitmap.availableBits = input.curRowNum
+                val $bmIter = $bitmap.iterator
+                var i = 0
+                while ($bmIter.hasNext) {
+                  i = $bmIter.next()
+                  ${eval.calculationCode}
+                  $cvResult.set(i, buffer.array().clone())
+                  buffer.clear()
+                }
+              } else {
+                val $rowNum = input.curRowNum
+                var i = 0
+                while (i < $rowNum) {
+                  ${eval.calculationCode}
+                  $cvResult.set(i, buffer.array().clone())
+                  buffer.clear()
+                  i += 1
+                }
+              }
+              $cvResult.notNullArray = $notNullArrayTerm
+              ${setCV(outputRowBatch, index, cvResult)}
+            """.children
+
+        case _ =>
+          val eval = expressionEvaluator(e)
+          val setter = mutatorForType(e.dataType)
+
+          val cvResult = freshName("cvresult")
+          val notNullArrayTerm = freshName("notNullArrayTerm")
+          val selector = freshName("selector")
+          val bitmap = freshName("bitmap")
+          val bmIter = freshName("bmIter")
+          val rowNum = freshName("curRowNum")
+          val resultDt = reify(e.dataType)
+
+          eval.prepareCode ++
+            q"""
+              val $cvResult = $columnVectorObj.apply($resultDt, input.curRowNum)
+              val $notNullArrayTerm = ${eval.notNullArrayTerm}
+              val $selector = input.curSelector
+              val $bitmap = ${andWithNull(notNullArrayTerm, selector, false)}
+
+              if ($bitmap != null) {
+                $bitmap.availableBits = input.curRowNum
+                val $bmIter = $bitmap.iterator
+                var i = 0
+                while ($bmIter.hasNext) {
+                  i = $bmIter.next()
+                  $cvResult.$setter(i, ${eval.calculationCode})
+                }
+              } else {
+                val $rowNum = input.curRowNum
+                var i = 0
+                while (i < $rowNum) {
+                  $cvResult.$setter(i, ${eval.calculationCode})
+                  i += 1
+                }
+              }
+              $cvResult.notNullArray = $notNullArrayTerm
+              ${setCV(outputRowBatch, index, cvResult)}
+            """.children
+      }
+    }
+  }
+
 
   protected def getCV(inputRB: TermName, ordinal: Int) = {
     q"$inputRB.vectors($ordinal)"
@@ -260,6 +410,7 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
 
   protected def accessorForType(dt: DataType) = newTermName(s"get${primitiveForType(dt)}")
   protected def mutatorForType(dt: DataType) = newTermName(s"set${primitiveForType(dt)}")
+  protected def pMutatorForType(dt: DataType) = newTermName(s"put${primitiveForType(dt)}")
 
   protected def primitiveForType(dt: DataType) = dt match {
     case IntegerType => "Int"
