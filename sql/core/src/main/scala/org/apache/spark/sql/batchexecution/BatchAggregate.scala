@@ -2,9 +2,10 @@ package org.apache.spark.sql.batchexecution
 
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.batchexpressions._
-import org.apache.spark.sql.catalyst.batchexpressions.codegen.AggregateBufferUpdating.AGG
 import org.apache.spark.sql.catalyst.batchexpressions.codegen._
 import org.apache.spark.sql.catalyst.expressions._
+
+import scala.collection.mutable.MutableList
 
 case class BatchAggregate(
     partial: Boolean,
@@ -12,22 +13,20 @@ case class BatchAggregate(
     aggregateExpressions: Seq[NamedExpression],
     child: SparkBatchPlan) extends UnaryBatchNode {
 
-  val grouping: Expression = Concat(groupingExpressions)
-  val aggregates = aggregateExpressions diff groupingExpressions
-  val aggregatesToCompute = aggregates.flatMap { a =>
+  val aggregatesToCompute = aggregateExpressions.flatMap { a =>
     a.collect { case agg: AggregateExpression => agg}
   }
 
-  val aggInfo = AggregateBufferUpdating.transformAggs(aggregatesToCompute)
-  val aggs: Seq[AGG] = aggInfo._1
-  val aggProjs: Seq[Expression] = aggInfo._2
-  val aggBufferLength: Int = aggInfo._3
+  val projs: Seq[Expression] = groupingExpressions ++ getProjection(aggregatesToCompute)
 
+  @transient lazy val projection = NewGenerateBatchMutableProjection(projs, child.output)
 
-  val projs: Seq[Expression] = aggProjs.+:(grouping)
+  val projectSchema: Seq[Attribute] = projs.map {
+    case ar : AttributeReference => ar
+    case e => Alias(e, s"projectionExpr:$e")().toAttribute
+  }
 
-  @transient lazy val projFunc = NewGenerateBatchMutableProjection(projs, child.output)
-  @transient lazy val bufferPrepare = AggregateBufferPreparation(aggBufferLength)
+  @transient lazy val bufferRefGetter = AggregateBufferRefGet(groupingExpressions, projectSchema)
 
   def batchExecute() = ???
 
@@ -40,14 +39,13 @@ case class BatchAggregate(
         null
       } else {
         child.batchExecute().mapPartitions { iter =>
-          val hashTable = new ByteArrayMap
+          val buffers = new java.util.HashMap[Row, MutableRow]()
           var currentRowBatch: RowBatch = null
           while (iter.hasNext) {
             currentRowBatch = iter.next()
-            val singleKeyRowBatch = projFunc()(currentRowBatch)
-            val keyCV = singleKeyRowBatch.vectors(0)
-            val aggregateSlots: BinaryColumnVector =
-              bufferPrepare(currentRowBatch)()(currentRowBatch, hashTable)
+            val projectedRowBatch = projection()(currentRowBatch)
+            val buffersRef: AggregateBufferPrepare = bufferRefGetter()
+              (projectedRowBatch, buffers, aggregatesToCompute.length)
           }
 
 
@@ -60,6 +58,23 @@ case class BatchAggregate(
     } else { //not partial
       null
     }
+  }
+
+  def getProjection(ae: Seq[AggregateExpression]): Seq[Expression] = {
+    val resultProjections = new MutableList[Expression]
+    var i = 0
+    while ( i < ae.length) {
+      val curAE = ae(i)
+      curAE match {
+        case Count(expr) => resultProjections += expr
+        case Sum(expr) => resultProjections += expr
+        case Max(expr) => resultProjections += expr
+        case Min(expr) => resultProjections += expr
+        case Average(expr) => resultProjections += expr
+      }
+      i += 1
+    }
+    resultProjections.toSeq
   }
 
 }

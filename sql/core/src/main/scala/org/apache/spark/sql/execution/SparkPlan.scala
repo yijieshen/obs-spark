@@ -58,13 +58,13 @@ abstract class SparkPlan extends QueryPlan[SparkPlan] with Logging with Serializ
   val codegenEnabled: Boolean = if (sqlContext != null) {
     sqlContext.codegenEnabled
   } else {
-    false
+    true
   }
 
   val batchConvertEnabled: Boolean = if (sqlContext != null) {
     sqlContext.batchConvertEnabled
   } else {
-    true
+    false
   }
 
   val rowBatchSize: Int = if (sqlContext != null) {

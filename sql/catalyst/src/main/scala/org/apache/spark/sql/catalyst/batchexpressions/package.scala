@@ -17,14 +17,18 @@
 
 package org.apache.spark.sql.catalyst
 
+import org.apache.spark.sql.catalyst.expressions.{Row, MutableRow}
+
 package object batchexpressions {
 
   abstract class RBProjection extends (RowBatch => RowBatch)
 
   abstract class AggregateBufferPrepare extends
-    ((RowBatch, ByteArrayMap) => BinaryColumnVector)
+    ((RowBatch, java.util.HashMap[Row, MutableRow], Int) => AggregateBufferRef)
 
   abstract class AggregateBufferUpdate extends
     ((RowBatch, BinaryColumnVector) => Unit)
+
+  class AggregateBufferRef(val buffers: Array[MutableRow])
 
 }

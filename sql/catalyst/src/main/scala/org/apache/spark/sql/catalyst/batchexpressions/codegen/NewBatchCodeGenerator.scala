@@ -46,8 +46,11 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
   protected val booleanLiteralType = typeOf[BooleanLiteral]
   protected val binaryColumnVectorType = typeOf[BinaryColumnVector]
 
+  protected val aggregateBufferRefType = typeOf[AggregateBufferRef]
+
   protected val byteBufferType = typeOf[ByteBuffer]
   protected val byteArrayMapType = typeOf[ByteArrayMap]
+  protected val hashMapType = typeOf[java.util.HashMap[Row, MutableRow]]
 
   protected val outputRowBatch = newTermName(s"output")
   protected val outputBinaryCV = newTermName(s"outputBCV")
@@ -315,6 +318,7 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
               ${setCV(outputRowBatch, index, inputCV)}
             """.children
 
+          /*
         case c @ Concat(children) =>
           val eval = expressionEvaluator(c)
 
@@ -356,6 +360,7 @@ abstract class NewBatchCodeGenerator[InType <: AnyRef, OutType <: AnyRef] extend
               $cvResult.notNullArray = $notNullArrayTerm
               ${setCV(outputRowBatch, index, cvResult)}
             """.children
+            */
 
         case _ =>
           val eval = expressionEvaluator(e)

@@ -94,7 +94,7 @@ trait SQLConf {
    *
    * Defaults to false as this feature is currently experimental.
    */
-  private[spark] def codegenEnabled: Boolean = getConf(CODEGEN_ENABLED, "false").toBoolean
+  private[spark] def codegenEnabled: Boolean = getConf(CODEGEN_ENABLED, "true").toBoolean
 
   private[spark] def rowBatchSize: Int = getConf(ROWBATCH_SIZE, "1000").toInt
   private[spark] def batchConvertEnabled: Boolean =
