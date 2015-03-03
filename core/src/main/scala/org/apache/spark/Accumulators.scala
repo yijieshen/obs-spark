@@ -19,9 +19,11 @@ package org.apache.spark
 
 import java.io.{ObjectInputStream, Serializable}
 import java.util.concurrent.atomic.AtomicLong
+import java.lang.ThreadLocal
 
 import scala.collection.generic.Growable
 import scala.collection.mutable.Map
+import scala.ref.WeakReference
 import scala.reflect.ClassTag
 
 import org.apache.spark.serializer.JavaSerializer
@@ -278,11 +280,24 @@ object AccumulatorParam {
 
 // TODO: The multi-thread support in accumulators is kind of lame; check
 // if there's a more intuitive way of doing it right
-private object Accumulators {
-  // TODO: Use soft references? => need to make readObject work properly then
-  val originals = Map[Long, Accumulable[_, _]]()
-  val localAccums = Map[Thread, Map[Long, Accumulable[_, _]]]()
-  var lastId: Long = 0
+private[spark] object Accumulators extends Logging {
+  /**
+   * This global map holds the original accumulator objects that are created on the driver.
+   * It keeps weak references to these objects so that accumulators can be garbage-collected
+   * once the RDDs and user-code that reference them are cleaned up.
+   */
+  val originals = Map[Long, WeakReference[Accumulable[_, _]]]()
+
+  /**
+   * This thread-local map holds per-task copies of accumulators; it is used to collect the set
+   * of accumulator updates to send back to the driver when tasks complete. After tasks complete,
+   * this map is cleared by `Accumulators.clear()` (see Executor.scala).
+   */
+  private val localAccums = new ThreadLocal[Map[Long, Accumulable[_, _]]]() {
+    override protected def initialValue() = Map[Long, Accumulable[_, _]]()
+  }
+
+  private var lastId: Long = 0
 
   def newId(): Long = synchronized {
     lastId += 1
@@ -291,24 +306,29 @@ private object Accumulators {
 
   def register(a: Accumulable[_, _], original: Boolean): Unit = synchronized {
     if (original) {
-      originals(a.id) = a
+      originals(a.id) = new WeakReference[Accumulable[_, _]](a)
     } else {
-      val accums = localAccums.getOrElseUpdate(Thread.currentThread, Map())
-      accums(a.id) = a
+      localAccums.get()(a.id) = a
     }
   }
 
   // Clear the local (non-original) accumulators for the current thread
   def clear() {
     synchronized {
-      localAccums.remove(Thread.currentThread)
+      localAccums.get.clear()
+    }
+  }
+
+  def remove(accId: Long) {
+    synchronized {
+      originals.remove(accId)
     }
   }
 
   // Get the values of the local accumulators for the current thread (by ID)
   def values: Map[Long, Any] = synchronized {
     val ret = Map[Long, Any]()
-    for ((id, accum) <- localAccums.getOrElse(Thread.currentThread, Map())) {
+    for ((id, accum) <- localAccums.get) {
       ret(id) = accum.localValue
     }
     return ret
@@ -318,7 +338,15 @@ private object Accumulators {
   def add(values: Map[Long, Any]): Unit = synchronized {
     for ((id, value) <- values) {
       if (originals.contains(id)) {
-        originals(id).asInstanceOf[Accumulable[Any, Any]] ++= value
+        // Since we are now storing weak references, we must check whether the underlying data
+        // is valid.
+        originals(id).get match {
+          case Some(accum) => accum.asInstanceOf[Accumulable[Any, Any]] ++= value
+          case None =>
+            throw new IllegalAccessError("Attempted to access garbage collected Accumulator.")
+        }
+      } else {
+        logWarning(s"Ignoring accumulator update for unknown accumulator id $id")
       }
     }
   }
